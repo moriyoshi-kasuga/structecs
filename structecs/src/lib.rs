@@ -68,6 +68,3 @@ pub use entity::{EntityData, EntityId};
 pub use extractable::{Extractable, ExtractionMetadata};
 pub use extractor::Extractor;
 pub use world::World;
-
-// Re-export commonly used traits
-pub use std::ops::Deref;
