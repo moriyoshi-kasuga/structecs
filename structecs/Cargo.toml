@@ -13,7 +13,7 @@ parking_lot = "0.12"
 structecs-macros = { path = "../structecs-macros" }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.7"
 
 [[bench]]
 name = "query_benchmark"
