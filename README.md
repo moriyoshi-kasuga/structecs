@@ -15,6 +15,8 @@ This crate is currently under active development. The API is not stable and may 
 - ✅ Archetype-based storage implemented
 - ✅ Iterator-based queries (zero-allocation)
 - ✅ Parallel query support with Rayon
+- ✅ Comprehensive test suite (60 tests covering integration, concurrency, memory safety, edge cases)
+- ✅ Thread-safe operations with fine-grained locking
 - 🔄 Query composition and filtering (planned)
 
 ---
@@ -29,6 +31,64 @@ Unlike conventional ECS frameworks (Bevy, specs, hecs), structecs:
 - ✅ **Hierarchical components** - Nest components naturally like OOP
 - ✅ **Dynamic type extraction** - Query for any component type on-the-fly
 - ✅ **Zero-cost abstractions** - Uses compile-time offsets for component access
+- ✅ **Thread-safe** - Concurrent operations with fine-grained locking
+
+## Quick Start
+
+```rust
+use structecs::*;
+
+// Define your entities with the Extractable derive macro
+#[derive(Debug, Extractable)]
+pub struct Entity {
+    pub name: String,
+}
+
+#[derive(Debug, Extractable)]
+#[extractable(entity)]  // Mark nested extractable fields
+pub struct Player {
+    pub entity: Entity,
+    pub health: u32,
+}
+
+fn main() {
+    // Create the world
+    let world = World::default();
+
+    // Add entities
+    let player_id = world.add_entity(Player {
+        entity: Entity {
+            name: "Hero".to_string(),
+        },
+        health: 100,
+    });
+
+    // Query all players
+    for (id, player) in world.query_iter::<Player>() {
+        println!("[{}] {}: {} HP", id.id(), player.entity.name, player.health);
+    }
+
+    // Extract nested components
+    for (id, entity) in world.query_iter::<Entity>() {
+        println!("Entity: {}", entity.name);
+        
+        // Try to extract as Player
+        if let Some(player) = entity.extract::<Player>() {
+            println!("  -> Player with {} HP", player.health);
+        }
+    }
+
+    // Parallel queries for large datasets
+    use rayon::prelude::*;
+    world.par_query_iter::<Player>()
+        .for_each(|(id, player)| {
+            // Process players in parallel
+        });
+
+    // Remove entities
+    world.remove_entity(&player_id);
+}
+```
 
 ### When to use structecs?
 
@@ -66,52 +126,54 @@ Entities don't "own" components. Instead, they reference structured data stored 
 In structecs, components are **fields within structs**. The `Extractable` trait allows the framework to understand your data structure and extract specific types.
 
 ```rust
-pub trait Extractable: 'static + Sized {
-    const METADATA_LIST: &'static [ExtractionMetadata];
+use structecs::*;
+
+#[derive(Debug, Extractable)]
+pub struct Entity {
+    pub name: String,
+}
+
+#[derive(Debug, Extractable)]
+#[extractable(entity)]
+pub struct Player {
+    pub entity: Entity,
+    pub health: u32,
 }
 ```
 
 **Key insight:** Components are hierarchical. A `Player` might contain an `Entity`, which itself is extractable.
-
-#### ExtractionMetadata
-
-Describes how to extract types from your data:
-
-```rust
-pub enum ExtractionMetadata {
-    Target {
-        type_id: TypeId,
-        offset: usize,
-    },
-    Nested {
-        type_id: TypeId,
-        offset: usize,
-        nested: &'static [ExtractionMetadata],
-    },
-}
-```
-
-This metadata is generated at compile-time by the derive macro, enabling zero-cost component access using memory offsets.
 
 ### 3. World
 
 The central data store that manages all entities and their data.
 
 ```rust
-pub struct World {
-    archetypes: HashMap<ArchetypeId, Archetype>,
-    extractors: HashMap<TypeId, Arc<Extractor>>,
-    entity_index: HashMap<EntityId, ArchetypeId>,
-    next_entity_id: u32,
+let world = World::default();
+
+// Add entities
+let player_id = world.add_entity(Player {
+    entity: Entity {
+        name: "Hero".to_string(),
+    },
+    health: 100,
+});
+
+// Query entities
+for (id, player) in world.query_iter::<Player>() {
+    println!("[{}] {}: {} HP", id.id(), player.entity.name, player.health);
 }
+
+// Remove entities
+world.remove_entity(&player_id);
 ```
 
 **Core operations:**
 
 - `add_entity<E: Extractable>(entity: E) -> EntityId` - Register new entity
-- `query_iter<T: 'static>() -> impl Iterator` - Efficiently iterate entities with component T
+- `remove_entity(entity_id: &EntityId) -> bool` - Remove entity from world
+- `query_iter<T: 'static>() -> impl Iterator<Item = (EntityId, Acquirable<T>)>` - Efficiently iterate entities with component T
 - `par_query_iter<T: 'static>() -> impl ParallelIterator` - Parallel iteration for large datasets
-- `extract_component<T>(entity_id) -> Option<Acquirable<T>>` - Get specific component
+- `extract_component<T>(entity_id: &EntityId) -> Option<Acquirable<T>>` - Get specific component
 
 ### 4. Acquirable
 
@@ -156,6 +218,8 @@ Each unique entity structure gets one `Extractor` (cached in `World`), which kno
 ---
 
 ## Architecture
+
+For detailed architecture documentation, see [Architecture.md](Architecture.md).
 
 ### Memory Layout
 
@@ -264,6 +328,62 @@ For simple operations (e.g., summing a field), sequential queries may be faster 
 
 ---
 
+## Testing
+
+structecs has a comprehensive test suite with **60+ tests** covering:
+
+### Integration Tests (19 tests)
+- World creation and management
+- Entity addition and removal
+- Query operations (sequential and parallel)
+- Component extraction
+- Multiple entity types
+- Large entity sets (10,000+ entities)
+
+### Concurrent Tests (10 tests)
+- 10-100 thread concurrent insertions
+- Concurrent reads while writing
+- Data race detection
+- Mixed operations (insert/remove/read/extract)
+- Heavy load stress tests (5,000+ entities across 100 threads)
+
+### Memory Safety Tests (10 tests)
+- Memory leak detection
+- Drop behavior verification
+- Large entity lifecycle management
+- Parallel query memory safety
+- Massive insertion/removal (50,000 entities)
+
+### Edge Case Tests (21 tests)
+- Empty world operations
+- Single entity operations
+- Empty and Unicode strings
+- Maximum values
+- Rapid add/remove cycles
+- Multiple entity types in same world
+- Archetype tracking
+
+**Run tests:**
+
+```bash
+# Run all tests
+cargo test --all
+
+# Run specific test suite
+cargo test --test integration_test
+cargo test --test concurrent_test
+cargo test --test memory_safety_test
+cargo test --test edge_cases_test
+```
+
+**Test results:**
+- ✅ 60 tests passed
+- ✅ 0 failures
+- ✅ 0 warnings
+- ✅ All tests complete in ~12 seconds
+
+---
+
 ## Comparison with Traditional ECS
 
 | Aspect | Traditional ECS | structecs |
@@ -292,12 +412,21 @@ For simple operations (e.g., summing a field), sequential queries may be faster 
 ### Phase 2: Multi-threading ✅ (Completed)
 
 - [x] Parallel query execution with Rayon
-- [ ] Read/Write access separation
-- [ ] Lock-free World operations where possible
+- [x] Thread-safe World operations with DashMap and RwLock
+- [x] Fine-grained locking per archetype
+- [x] Comprehensive concurrency tests
 
-### Phase 3: Features (In Progress)
+### Phase 3: Quality & Testing ✅ (Completed)
 
 - [x] Entity removal
+- [x] 60+ comprehensive tests covering:
+  - Integration tests (19 tests)
+  - Concurrent operations (10 tests)
+  - Memory safety (10 tests)
+  - Edge cases (21 tests)
+
+### Phase 4: Features (In Progress)
+
 - [ ] Dynamic component add/remove
 - [ ] Event system
 - [ ] Query filtering and composition
