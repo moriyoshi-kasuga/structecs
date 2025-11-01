@@ -49,6 +49,16 @@ impl World {
             .clone()
     }
 
+    fn get_archetype_by_entity(&self, entity_id: &EntityId) -> Option<Arc<Archetype>> {
+        let archetype_id = *self.entity_index.get(entity_id)?.value();
+        self.archetypes.get(&archetype_id).map(|a| a.clone())
+    }
+
+    fn get_entity_data(&self, entity_id: &EntityId) -> Option<crate::entity::EntityData> {
+        let archetype = self.get_archetype_by_entity(entity_id)?;
+        archetype.entities.get(entity_id).map(|d| d.clone())
+    }
+
     /// Add an entity to the world.
     ///
     /// Returns the ID assigned to the entity.
@@ -70,10 +80,28 @@ impl World {
         entity_id
     }
 
+    pub fn add_additional<E: Extractable>(&self, entity_id: &EntityId, entity: E) -> bool {
+        let data = match self.get_entity_data(entity_id) {
+            Some(d) => d,
+            None => return false,
+        };
+        data.add_additional(entity);
+        true
+    }
+
+    pub fn extract_additional<T: 'static>(&self, entity_id: &EntityId) -> Option<Acquirable<T>> {
+        let data = self.get_entity_data(entity_id)?;
+        data.extract_additional::<T>()
+    }
+
+    pub fn remove_additional<T: 'static>(&self, entity_id: &EntityId) -> Option<Acquirable<T>> {
+        let data = self.get_entity_data(entity_id)?;
+        data.remove_additional::<T>()
+    }
+
     /// Extract a specific component from an entity.
     pub fn extract_component<T: 'static>(&self, entity_id: &EntityId) -> Option<Acquirable<T>> {
-        let archetype_id = *self.entity_index.get(entity_id)?;
-        let archetype = self.archetypes.get(&archetype_id)?;
+        let archetype = self.get_archetype_by_entity(entity_id)?;
         archetype.extract_entity(entity_id)
     }
 

@@ -1,4 +1,5 @@
 use std::{
+    any::TypeId,
     ptr::NonNull,
     sync::{
         Arc,
@@ -6,7 +7,9 @@ use std::{
     },
 };
 
-use crate::extractor::Extractor;
+use dashmap::DashMap;
+
+use crate::{Extractable, extractor::Extractor};
 
 /// Unique identifier for an entity in the World.
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
@@ -30,6 +33,7 @@ pub(crate) struct EntityDataInner {
     pub(crate) data: NonNull<u8>,
     pub(crate) counter: AtomicUsize,
     pub(crate) extractor: Arc<Extractor>,
+    pub(crate) additional: DashMap<TypeId, NonNull<u8>>,
 }
 
 #[repr(transparent)]
@@ -51,6 +55,7 @@ impl EntityData {
             data: unsafe { NonNull::new_unchecked(ptr) },
             counter: AtomicUsize::new(1),
             extractor,
+            additional: DashMap::new(),
         };
         Self {
             inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(inner))) },
@@ -64,6 +69,26 @@ impl EntityData {
 
     pub(crate) unsafe fn extract_ptr<T: 'static>(&self) -> Option<NonNull<T>> {
         unsafe { self.inner().extractor.extract_ptr::<T>(self.inner().data) }
+    }
+
+    pub(crate) fn add_additional<E: Extractable>(&self, data: E) {
+        let data = {
+            let ptr = Box::into_raw(Box::new(data)) as *mut u8;
+            unsafe { NonNull::new_unchecked(ptr) }
+        };
+        self.inner().additional.insert(TypeId::of::<E>(), data);
+    }
+
+    pub(crate) fn extract_additional<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
+        let additional = self.inner().additional.get(&TypeId::of::<T>())?;
+        let extracted = additional.value().cast::<T>();
+        Some(crate::Acquirable::new(extracted, self.clone()))
+    }
+
+    pub(crate) fn remove_additional<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
+        let additional = self.inner().additional.remove(&TypeId::of::<T>())?.1;
+        let extracted = additional.cast::<T>();
+        Some(crate::Acquirable::new(extracted, self.clone()))
     }
 }
 

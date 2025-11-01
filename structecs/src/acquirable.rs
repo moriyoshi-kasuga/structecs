@@ -34,6 +34,20 @@ impl<T: 'static> Acquirable<T> {
         let extracted = unsafe { self.inner.extract_ptr::<U>()? };
         Some(Acquirable::new(extracted, self.inner.clone()))
     }
+
+    pub fn add_additional<E: crate::Extractable>(&self, data: E) {
+        self.inner.add_additional(data);
+    }
+
+    pub fn extract_additional<U: 'static>(&self) -> Option<Acquirable<U>> {
+        let additional = self.inner.extract_additional::<U>()?;
+        Some(additional)
+    }
+
+    pub fn remove_additional<U: 'static>(&self) -> Option<Acquirable<U>> {
+        let additional = self.inner.remove_additional::<U>()?;
+        Some(additional)
+    }
 }
 
 // Safe to send across threads since we use atomic reference counting

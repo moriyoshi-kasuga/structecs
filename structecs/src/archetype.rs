@@ -22,9 +22,10 @@ impl Archetype {
         }
     }
 
-    pub(crate) fn add_entity<E: Extractable>(&self, id: EntityId, entity: E) {
+    pub(crate) fn add_entity<E: Extractable>(&self, id: EntityId, entity: E) -> EntityData {
         let data = EntityData::new(entity, self.extractor.clone());
-        self.entities.insert(id, data);
+        self.entities.insert(id, data.clone());
+        data
     }
 
     /// Check if this archetype can provide component type T.
