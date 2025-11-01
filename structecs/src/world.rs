@@ -114,22 +114,28 @@ impl World {
 
     /// Create an iterator over all entities with component T.
     /// 
-    /// This is more efficient than collecting to a Vec as it doesn't allocate.
+    /// This method snapshots data from relevant archetypes and returns an iterator.
+    /// Locks are held briefly during the snapshot phase, then released immediately,
+    /// allowing concurrent operations to proceed without blocking.
+    /// 
+    /// # Performance
+    /// 
+    /// This method is optimized for struct-based queries. Since structecs manages
+    /// entities at the struct level (not individual components), iteration is
+    /// straightforward and efficient.
     /// 
     /// # Concurrency
     /// 
-    /// This method snapshots archetype data while holding read locks briefly,
-    /// then releases them. The iterator operates on the snapshot, allowing
-    /// concurrent queries and entity additions to proceed without blocking.
+    /// Multiple threads can call this method simultaneously. Each archetype is
+    /// locked independently and briefly, minimizing contention.
     pub fn query_iter<T: 'static>(&self) -> impl Iterator<Item = (EntityId, Acquirable<T>)> {
-        // Collect archetypes that have component T
-        let relevant_archetypes: Vec<_> = self.archetypes
+        // Snapshot relevant archetypes in a single pass
+        self.archetypes
             .iter()
             .filter_map(|entry| {
                 let archetype = entry.value().read();
                 if archetype.has_component::<T>() {
-                    // Collect entities while holding the read lock
-                    // We need to clone EntityIds since we can't hold references past the lock
+                    // Snapshot this archetype's data while holding the lock
                     Some(archetype.iter_component::<T>()
                         .map(|(id, comp)| (*id, comp))
                         .collect::<Vec<_>>())
@@ -137,60 +143,60 @@ impl World {
                     None
                 }
             })
-            .collect();
-        
-        // Now we can iterate over the snapshot without holding any locks
-        relevant_archetypes.into_iter().flatten()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flatten()
     }
 
     /// Create a parallel iterator over all entities with component T.
     /// 
-    /// Uses Rayon for parallel iteration across archetypes for better performance
-    /// on large datasets. Each archetype's entities are processed in parallel.
+    /// Uses Rayon for parallel processing across archetypes. This method is
+    /// optimized for large datasets where the parallelization overhead is
+    /// justified by the performance gains.
+    /// 
+    /// # Performance Considerations
+    /// 
+    /// - **Best for**: Large entity counts (>10,000 entities) with CPU-intensive operations
+    /// - **Not ideal for**: Small datasets or simple queries (use `query_iter()` instead)
+    /// - **Lock strategy**: Each archetype is locked independently and briefly during snapshotting
     /// 
     /// # Concurrency
     /// 
-    /// This method uses fine-grained locking - each archetype is read-locked
-    /// independently and briefly. Multiple threads can query different archetypes
-    /// in parallel with minimal contention.
+    /// Multiple threads can call this method simultaneously. The DashMap allows
+    /// lock-free reads, and each archetype's RwLock is held only briefly during
+    /// the snapshot phase. After snapshotting, parallel processing proceeds without
+    /// holding any locks.
     /// 
-    /// # When to Use
+    /// # Example
     /// 
-    /// Parallel queries have overhead and are most beneficial when:
-    /// - Working with large entity counts (>10,000 entities)
-    /// - Performing complex operations on each entity
-    /// - The work can be effectively parallelized
-    /// 
-    /// For simple queries or small datasets, prefer `query_iter()`.
+    /// ```ignore
+    /// // Process large numbers of entities in parallel
+    /// world.par_query_iter::<Player>()
+    ///     .for_each(|(id, player)| {
+    ///         // CPU-intensive operation here
+    ///     });
+    /// ```
     pub fn par_query_iter<T: 'static + Send + Sync>(&self) -> impl ParallelIterator<Item = (EntityId, Acquirable<T>)>
     where
         Acquirable<T>: Send,
     {
-        // Collect archetypes into a Vec so we can use Rayon's parallel iterator
-        let archetypes: Vec<_> = self.archetypes.iter()
-            .map(|entry| entry.value().clone())
-            .collect();
-        
-        archetypes.into_par_iter().flat_map(|archetype| {
-            let guard = archetype.read();
-            if guard.has_component::<T>() {
-                // Process entities in parallel within each archetype
-                guard.entities_slice().par_iter().filter_map(|(id, data)| {
-                    data.extract::<T>().map(|component| (*id, component))
-                }).collect::<Vec<_>>()
-            } else {
-                Vec::new()
-            }
-        })
+        // Snapshot all relevant archetypes in parallel
+        self.archetypes
+            .iter()
+            .par_bridge()
+            .filter_map(|entry| {
+                let archetype = entry.value().read();
+                if archetype.has_component::<T>() {
+                    // Snapshot this archetype's data while holding the lock
+                    Some(archetype.iter_component::<T>()
+                        .map(|(id, comp)| (*id, comp))
+                        .collect::<Vec<_>>())
+                } else {
+                    None
+                }
+            })
+            .flatten()
     }
-
-    // TODO: Query builder needs refactoring to work with Arc<RwLock<Archetype>>
-    // For now, use query_iter() or par_query_iter() directly
-    // 
-    // /// Get a query builder for more complex queries.
-    // pub fn query_builder(&self) -> Query<'_> {
-    //     ...
-    // }
 
     /// Get the number of entities in the world.
     pub fn entity_count(&self) -> usize {

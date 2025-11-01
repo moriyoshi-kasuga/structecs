@@ -60,7 +60,6 @@ mod extractable;
 mod extractor;
 mod acquirable;
 mod archetype;
-mod query;
 mod world;
 
 // Public exports
@@ -69,7 +68,6 @@ pub use extractable::{ExtractionMetadata, Extractable};
 pub use extractor::Extractor;
 pub use acquirable::Acquirable;
 pub use world::World;
-pub use query::Query;
 
 // Re-export commonly used traits
 pub use std::ops::Deref;

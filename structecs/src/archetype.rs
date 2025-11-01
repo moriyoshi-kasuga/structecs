@@ -41,12 +41,6 @@ impl Archetype {
         })
     }
 
-    /// Get a slice of all entities for parallel iteration.
-    #[inline]
-    pub(crate) fn entities_slice(&self) -> &[(EntityId, EntityData)] {
-        &self.entities
-    }
-
     /// Get entity data by ID.
     pub(crate) fn get_entity(&self, entity_id: &EntityId) -> Option<&EntityData> {
         self.entities
