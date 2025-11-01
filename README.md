@@ -86,8 +86,18 @@ fn main() {
             // Process players in parallel
         });
 
-    // Remove entities
-    world.remove_entity(&player_id);
+    // Batch remove entities efficiently
+    let ids_to_remove = vec![player_id /* ... */];
+    let removed_count = world.remove_entities(&ids_to_remove);
+    println!("Removed {} entities", removed_count);
+
+    // Check entity existence
+    if world.contains_entity(&player_id) {
+        println!("Player still exists");
+    }
+
+    // Clear all entities
+    world.clear();
 }
 ```
 
@@ -118,6 +128,15 @@ An `Entity` is just an ID - a lightweight handle to your data.
 pub struct EntityId {
     id: u32,
 }
+
+impl EntityId {
+    pub fn id(&self) -> u32;
+    pub fn as_usize(&self) -> usize;  // For array indexing
+    pub fn from_raw(id: u32) -> Self;  // Create from raw u32
+}
+
+// EntityId implements Display: "Entity(123)"
+println!("{}", entity_id);
 ```
 
 Entities don't "own" components. Instead, they reference structured data stored in the `World`.
@@ -164,14 +183,23 @@ for (id, player) in world.query::<Player>() {
     println!("[{}] {}: {} HP", id.id(), player.entity.name, player.health);
 }
 
-// Remove entities
-world.remove_entity(&player_id);
+// Batch operations
+let ids = vec![id1, id2, id3];
+let count = world.remove_entities(&ids);  // Efficient batch removal
+
+// Check existence
+if world.contains_entity(&player_id) {
+    world.remove_entity(&player_id);
+}
 ```
 
 **Core operations:**
 
 - `add_entity<E: Extractable>(entity: E) -> EntityId` - Register new entity
-- `remove_entity(entity_id: &EntityId) -> bool` - Remove entity from world
+- `remove_entity(entity_id: &EntityId) -> bool` - Remove single entity from world
+- `remove_entities(entity_ids: &[EntityId]) -> usize` - Batch remove entities, returns count of removed
+- `contains_entity(entity_id: &EntityId) -> bool` - Check if entity exists in world
+- `clear()` - Remove all entities from world
 - `query<T: 'static>() -> Vec(EntityId, Acquirable<T>)>` - Efficiently iterate entities with component T
 - `extract_component<T>(entity_id: &EntityId) -> Option<Acquirable<T>>` - Get specific component
 
@@ -443,12 +471,6 @@ cargo test --test edge_cases_test
 
 - [x] Entity removal
 - [x] Additional components system
-- [x] 69 comprehensive tests covering:
-  - Integration tests (19 tests)
-  - Concurrent operations (10 tests)
-  - Memory safety (10 tests)
-  - Edge cases (21 tests)
-  - Additional components (9 tests)
 
 ### Phase 4: Features (In Progress)
 
