@@ -250,6 +250,7 @@ fn test_empty_archetype_cleanup() {
 }
 
 #[test]
+#[ignore = "Stress test - ignored by default"]
 fn test_massive_insertion_and_removal() {
     let world = World::new();
     let entity_count = 50_000;

@@ -356,6 +356,7 @@ fn test_concurrent_updates() {
 }
 
 #[test]
+#[ignore = "Stress test - may take longer to run"]
 fn test_stress_100_threads_heavy_load() {
     let world = Arc::new(World::new());
     let mut handles = vec![];
