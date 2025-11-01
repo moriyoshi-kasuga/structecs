@@ -55,23 +55,23 @@ fn main() {
     println!("\n=== Query All Entities (Iterator) ===");
     // Using iterator-based query (efficient, no allocation until snapshot)
     for (id, entity) in world.query::<Entity>() {
-        println!("[{}] Entity: {:?}", id.id(), *entity);
+        println!("[{}] Entity: {:?}", id, *entity);
     }
 
     println!("\n=== Query Players Only ===");
     for (id, player) in world.query::<Player>() {
-        println!("[{}] Player: {:?}", id.id(), *player);
+        println!("[{}] Player: {:?}", id, *player);
     }
 
     println!("\n=== Query Zombies Only ===");
     for (id, zombie) in world.query::<Zombie>() {
-        println!("[{}] Zombie: {:?}", id.id(), *zombie);
+        println!("[{}] Zombie: {:?}", id, *zombie);
     }
 
     println!("\n=== Extract Components ===");
     // Extract nested components from entities
     for (id, entity) in world.query::<Entity>() {
-        print!("[{}] {}", id.id(), entity.name);
+        print!("[{}] {}", id, entity.name);
 
         // Try to extract as Player
         if let Some(player) = entity.extract::<Player>() {

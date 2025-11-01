@@ -122,7 +122,7 @@ fn main() {
     for (id, player, (buff, poison)) in world.query_with::<Player, (Buff, Poisoned)>().query() {
         print!(
             "   [{}] {} (HP: {}, Lv: {})",
-            id.id(),
+            id,
             player.name,
             player.health,
             player.level

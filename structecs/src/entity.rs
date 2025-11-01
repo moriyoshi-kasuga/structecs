@@ -22,9 +22,19 @@ impl EntityId {
         Self { id }
     }
 
-    /// Get the raw ID value
-    pub fn id(&self) -> u32 {
-        self.id
+    /// Create an EntityId from a raw u32 value.
+    ///
+    /// # Safety
+    /// The caller must ensure that the provided `id` is valid and unique within the context
+    /// of the World. Using an invalid or duplicate ID may lead to undefined behavior.
+    pub fn from_raw(id: u32) -> Self {
+        Self { id }
+    }
+}
+
+impl std::fmt::Display for EntityId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Entity({})", self.id)
     }
 }
 

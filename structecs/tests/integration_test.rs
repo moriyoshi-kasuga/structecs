@@ -415,26 +415,6 @@ fn test_add_entities_empty() {
 }
 
 #[test]
-fn test_add_entities_sequential_ids() {
-    let world = World::new();
-
-    let entities: Vec<Player> = (0..5)
-        .map(|i| Player {
-            name: format!("Player{}", i),
-            health: 100,
-            level: i,
-        })
-        .collect();
-
-    let ids = world.add_entities(entities);
-
-    // IDs should be sequential
-    for i in 1..ids.len() {
-        assert_eq!(ids[i].id(), ids[i - 1].id() + 1);
-    }
-}
-
-#[test]
 fn test_add_entities_large_batch() {
     let world = World::new();
 
@@ -452,4 +432,160 @@ fn test_add_entities_large_batch() {
 
     let players = world.query::<Player>();
     assert_eq!(players.len(), 10_000);
+}
+
+#[test]
+fn test_remove_entities_batch() {
+    let world = World::new();
+
+    // Add entities
+    let mut ids = vec![];
+    for i in 0..100 {
+        let id = world.add_entity(Player {
+            name: format!("Player{}", i),
+            health: 100,
+            level: i,
+        });
+        ids.push(id);
+    }
+
+    assert_eq!(world.entity_count(), 100);
+
+    // Remove first 50 in batch
+    let removed = world.remove_entities(&ids[0..50]);
+    assert_eq!(removed, 50);
+    assert_eq!(world.entity_count(), 50);
+
+    // Verify remaining entities
+    let players = world.query::<Player>();
+    assert_eq!(players.len(), 50);
+}
+
+#[test]
+fn test_remove_entities_empty() {
+    let world = World::new();
+
+    let ids: Vec<EntityId> = vec![];
+    let removed = world.remove_entities(&ids);
+    assert_eq!(removed, 0);
+}
+
+#[test]
+fn test_remove_entities_nonexistent() {
+    let world = World::new();
+
+    // Create IDs but don't add them
+    let fake_ids = vec![
+        EntityId::from_raw(9999),
+        EntityId::from_raw(10000),
+        EntityId::from_raw(10001),
+    ];
+
+    let removed = world.remove_entities(&fake_ids);
+    assert_eq!(removed, 0);
+}
+
+#[test]
+fn test_remove_entities_mixed() {
+    let world = World::new();
+
+    let mut ids = vec![];
+    for i in 0..10 {
+        let id = world.add_entity(Player {
+            name: format!("Player{}", i),
+            health: 100,
+            level: i,
+        });
+        ids.push(id);
+    }
+
+    // Remove some entities individually first
+    world.remove_entity(&ids[0]);
+    world.remove_entity(&ids[1]);
+
+    // Now try to remove batch including already-removed ones
+    let remove_ids = vec![ids[0], ids[1], ids[2], ids[3], ids[4]];
+    let removed = world.remove_entities(&remove_ids);
+
+    // Should only remove 3 (ids[2], ids[3], ids[4])
+    assert_eq!(removed, 3);
+    assert_eq!(world.entity_count(), 5);
+}
+
+#[test]
+fn test_remove_entities_different_types() {
+    let world = World::new();
+
+    let mut player_ids = vec![];
+    let mut enemy_ids = vec![];
+
+    for i in 0..5 {
+        player_ids.push(world.add_entity(Player {
+            name: format!("Player{}", i),
+            health: 100,
+            level: i,
+        }));
+        enemy_ids.push(world.add_entity(Enemy {
+            name: format!("Enemy{}", i),
+            damage: 50,
+        }));
+    }
+
+    assert_eq!(world.entity_count(), 10);
+
+    // Mix player and enemy IDs
+    let mixed_ids = vec![player_ids[0], enemy_ids[0], player_ids[1], enemy_ids[1]];
+    let removed = world.remove_entities(&mixed_ids);
+
+    assert_eq!(removed, 4);
+    assert_eq!(world.entity_count(), 6);
+}
+
+#[test]
+fn test_contains_entity() {
+    let world = World::new();
+
+    let id = world.add_entity(Player {
+        name: "Test".to_string(),
+        health: 100,
+        level: 1,
+    });
+
+    assert!(world.contains_entity(&id));
+
+    world.remove_entity(&id);
+    assert!(!world.contains_entity(&id));
+
+    // Non-existent entity
+    let fake_id = EntityId::from_raw(99999);
+    assert!(!world.contains_entity(&fake_id));
+}
+
+#[test]
+fn test_world_clear() {
+    let world = World::new();
+
+    // Add multiple entity types
+    for i in 0..50 {
+        world.add_entity(Player {
+            name: format!("Player{}", i),
+            health: 100,
+            level: i,
+        });
+    }
+
+    for i in 0..30 {
+        world.add_entity(Enemy {
+            name: format!("Enemy{}", i),
+            damage: 50,
+        });
+    }
+
+    assert_eq!(world.entity_count(), 80);
+    assert_eq!(world.archetype_count(), 2);
+
+    world.clear();
+
+    assert_eq!(world.entity_count(), 0);
+    assert_eq!(world.archetype_count(), 0);
 }

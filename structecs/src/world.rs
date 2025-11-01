@@ -176,6 +176,53 @@ impl World {
         }
     }
 
+    /// Remove multiple entities from the world in batch.
+    ///
+    /// Returns the number of entities successfully removed.
+    ///
+    /// This method is optimized for bulk deletion by:
+    /// - Grouping entities by archetype to minimize archetype lookups
+    /// - Batch-removing entities from each archetype
+    ///
+    /// # Performance
+    ///
+    /// For removing many entities, this method is more efficient than calling
+    /// `remove_entity()` repeatedly because it processes entities in archetype
+    /// groups, reducing overhead.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe and can be called concurrently from multiple threads.
+    pub fn remove_entities(&self, entity_ids: &[EntityId]) -> usize {
+        use std::collections::HashMap;
+
+        // Group entity IDs by archetype
+        let mut archetype_groups: HashMap<ArchetypeId, Vec<EntityId>> = HashMap::new();
+
+        for entity_id in entity_ids {
+            if let Some((_, archetype_id)) = self.entity_index.remove(entity_id) {
+                archetype_groups
+                    .entry(archetype_id)
+                    .or_default()
+                    .push(*entity_id);
+            }
+        }
+
+        // Remove entities from each archetype
+        let mut removed_count = 0;
+        for (archetype_id, entities) in archetype_groups {
+            if let Some(archetype) = self.archetypes.get(&archetype_id) {
+                for entity_id in entities {
+                    if archetype.remove_entity(&entity_id).is_some() {
+                        removed_count += 1;
+                    }
+                }
+            }
+        }
+
+        removed_count
+    }
+
     /// Query all entities with component T.
     ///
     /// This method snapshots data from relevant archetypes and returns a Vec.
@@ -245,6 +292,25 @@ impl World {
         self.get_entity_data(entity_id)
             .map(|data| data.has_additional::<T>())
             .unwrap_or(false)
+    }
+
+    /// Check if an entity exists in the world.
+    pub fn contains_entity(&self, entity_id: &EntityId) -> bool {
+        self.entity_index.contains_key(entity_id)
+    }
+
+    /// Remove all entities from the world.
+    ///
+    /// This method clears all entities and archetypes, resetting the world
+    /// to an empty state. The entity ID counter is NOT reset.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe but should typically be called when no other
+    /// operations are in progress for best performance.
+    pub fn clear(&self) {
+        self.entity_index.clear();
+        self.archetypes.clear();
     }
 }
 
