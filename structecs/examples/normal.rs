@@ -1,4 +1,4 @@
-use flatecs::*;
+use structecs::*;
 
 #[derive(Debug, Extractable)]
 pub struct Entity {

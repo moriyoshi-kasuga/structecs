@@ -1,5 +1,5 @@
 [package]
-name = "flatecs-macros"
+name = "structecs-macros"
 version.workspace = true
 edition.workspace = true
 

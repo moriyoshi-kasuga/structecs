@@ -10,7 +10,7 @@ use std::{
     },
 };
 
-pub use flatecs_macros::Extractable;
+pub use structecs_macros::Extractable;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
 pub struct EntityId {

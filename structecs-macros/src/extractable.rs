@@ -89,7 +89,7 @@ fn expand(attr: Vec<Metadata<'_>>, input: &DeriveInput) -> syn::Result<TokenStre
         .map(|attr| match attr {
             Metadata::Offset0 { target_type } => {
                 quote::quote! {
-                    flatecs::ExtractionMetadata::new::<#target_type>(0),
+                    structecs::ExtractionMetadata::new::<#target_type>(0),
                 }
             }
             Metadata::Nested {
@@ -97,7 +97,7 @@ fn expand(attr: Vec<Metadata<'_>>, input: &DeriveInput) -> syn::Result<TokenStre
                 target_type,
             } => {
                 quote::quote! {
-                    flatecs::ExtractionMetadata::new_nested::<#target_type>(
+                    structecs::ExtractionMetadata::new_nested::<#target_type>(
                         core::mem::offset_of!(#struct_name, #field_ident),
                         #target_type::METADATA_LIST,
                     ),
@@ -107,8 +107,8 @@ fn expand(attr: Vec<Metadata<'_>>, input: &DeriveInput) -> syn::Result<TokenStre
         .collect::<TokenStream>();
 
     Ok(quote::quote! {
-        impl #impl_generics flatecs::Extractable for #struct_name #ty_generics #where_clause {
-            const METADATA_LIST: &'static [flatecs::ExtractionMetadata] = &[
+        impl #impl_generics structecs::Extractable for #struct_name #ty_generics #where_clause {
+            const METADATA_LIST: &'static [structecs::ExtractionMetadata] = &[
                 #metadata_list
             ];
         }

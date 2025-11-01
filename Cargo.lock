@@ -23,23 +23,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "flatecs"
-version = "0.1.0"
-dependencies = [
- "enum-table",
- "flatecs-macros",
-]
-
-[[package]]
-name = "flatecs-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -55,6 +38,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce25767e7b499d1b604768e7cde645d14cc8584231ea6b295e9c9eb22c02e1d1"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "structecs"
+version = "0.1.0"
+dependencies = [
+ "enum-table",
+ "structecs-macros",
+]
+
+[[package]]
+name = "structecs-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
