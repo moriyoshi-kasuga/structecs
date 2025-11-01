@@ -1,3 +1,5 @@
+#![allow(clippy::print_stdout, clippy::unwrap_used)]
+
 use structecs::*;
 
 #[derive(Debug, Extractable)]

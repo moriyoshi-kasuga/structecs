@@ -11,6 +11,8 @@
 //! cargo run --example additional
 //! ```
 
+#![allow(clippy::print_stdout, clippy::unwrap_used)]
+
 use structecs::{Extractable, World};
 
 // Base entity structure

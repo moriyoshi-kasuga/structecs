@@ -3,6 +3,9 @@ name = "structecs"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 dashmap = "6.1"
 enum-table = "2.1"
