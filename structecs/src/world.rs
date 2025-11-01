@@ -1,5 +1,7 @@
 use std::{any::TypeId, collections::HashMap, sync::Arc};
 
+use rayon::prelude::*;
+
 use crate::{
     archetype::{Archetype, ArchetypeId},
     entity::EntityData,
@@ -91,16 +93,9 @@ impl World {
         }
     }
 
-    /// Query for all entities with component T (returns Vec for compatibility).
-    /// 
-    /// Consider using `query_iter()` for an iterator-based approach.
-    pub fn query<T: 'static>(&self) -> Vec<(&EntityId, Acquirable<T>)> {
-        self.query_iter::<T>().collect()
-    }
-
     /// Create an iterator over all entities with component T.
     /// 
-    /// This is more efficient than `query()` as it doesn't allocate a Vec.
+    /// This is more efficient than collecting to a Vec as it doesn't allocate.
     pub fn query_iter<T: 'static>(&self) -> impl Iterator<Item = (&EntityId, Acquirable<T>)> + '_ {
         self.archetypes.values().flat_map(|archetype| {
             if archetype.has_component::<T>() {
@@ -109,6 +104,33 @@ impl World {
                 None
             }
         }).flatten()
+    }
+
+    /// Create a parallel iterator over all entities with component T.
+    /// 
+    /// Uses Rayon for parallel iteration across archetypes for better performance
+    /// on large datasets. Each archetype's entities are processed in parallel.
+    /// 
+    /// Note: Parallel queries have overhead and are most beneficial when:
+    /// - Working with large entity counts (>10,000 entities)
+    /// - Performing complex operations on each entity
+    /// - The work can be effectively parallelized
+    /// 
+    /// For simple queries or small datasets, prefer `query_iter()`.
+    pub fn par_query_iter<T: 'static + Send + Sync>(&self) -> impl ParallelIterator<Item = (&EntityId, Acquirable<T>)> + '_ 
+    where
+        Acquirable<T>: Send,
+    {
+        self.archetypes.par_iter().flat_map(|(_, archetype)| {
+            if archetype.has_component::<T>() {
+                // Process entities in parallel within each archetype
+                archetype.entities_slice().par_iter().filter_map(|(id, data)| {
+                    data.extract::<T>().map(|component| (id, component))
+                }).collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            }
+        })
     }
 
     /// Get a query builder for more complex queries.

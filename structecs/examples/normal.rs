@@ -67,8 +67,8 @@ fn main() {
     }
 
     println!("\n=== Extract Components ===");
-    // Using old-style query for compatibility
-    for (id, entity) in world.query::<Entity>() {
+    // Extract nested components from entities
+    for (id, entity) in world.query_iter::<Entity>() {
         print!("[{}] {}", id.id(), entity.name);
         
         // Try to extract as Player

@@ -1,13 +1,13 @@
 use std::{any::TypeId, sync::Arc};
 
-use crate::{entity::EntityData, extractor::Extractor, Acquirable, EntityId};
+use crate::{Acquirable, EntityId, entity::EntityData, extractor::Extractor};
 
 /// An archetype represents a unique combination of component types.
 /// All entities with the same structure share an archetype.
 pub struct Archetype {
     /// The extractor for this archetype's entity structure.
     pub(crate) extractor: Arc<Extractor>,
-    
+
     /// Entities stored in this archetype.
     pub(crate) entities: Vec<(EntityId, EntityData)>,
 }
@@ -32,11 +32,19 @@ impl Archetype {
     }
 
     /// Iterate over entities that have component T.
-    pub(crate) fn iter_component<T: 'static>(&self) -> impl Iterator<Item = (&EntityId, Acquirable<T>)> + '_ {
+    pub(crate) fn iter_component<T: 'static>(
+        &self,
+    ) -> impl Iterator<Item = (&EntityId, Acquirable<T>)> + '_ {
         self.entities.iter().filter_map(|(id, data)| {
             let component = data.extract::<T>()?;
             Some((id, component))
         })
+    }
+
+    /// Get a slice of all entities for parallel iteration.
+    #[inline]
+    pub(crate) fn entities_slice(&self) -> &[(EntityId, EntityData)] {
+        &self.entities
     }
 
     /// Get entity data by ID.
@@ -55,12 +63,14 @@ impl Archetype {
 
     /// Get the number of entities in this archetype.
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
         self.entities.len()
     }
 
     /// Check if this archetype is empty.
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn is_empty(&self) -> bool {
         self.entities.is_empty()
     }

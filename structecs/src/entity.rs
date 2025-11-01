@@ -18,7 +18,7 @@ impl EntityId {
     pub(crate) fn new(id: u32) -> Self {
         Self { id }
     }
-    
+
     /// Get the raw ID value
     pub fn id(&self) -> u32 {
         self.id

@@ -30,7 +30,7 @@ impl Extractor {
     }
 
     /// Extract a pointer to a component of type T from entity data.
-    /// 
+    ///
     /// # Safety
     /// The caller must ensure the pointer is used correctly and not outlive the entity data.
     pub unsafe fn extract_ptr<T: 'static>(&self, data: NonNull<u8>) -> Option<NonNull<T>> {
@@ -40,7 +40,7 @@ impl Extractor {
     }
 
     /// Extract a reference to a component, panicking if not found.
-    /// 
+    ///
     /// # Safety
     /// This function assumes that the type T is present in the extractor's offsets.
     pub unsafe fn extract_unchecked<T: 'static>(&self, data: NonNull<u8>) -> &T {

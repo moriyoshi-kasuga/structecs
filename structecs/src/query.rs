@@ -1,13 +1,14 @@
-use crate::{archetype::Archetype, Acquirable, EntityId};
+use crate::{Acquirable, EntityId, archetype::Archetype};
 
 /// Iterator over query results.
-/// 
+///
 /// This is more efficient than collecting into a Vec as it:
 /// - Avoids allocation
 /// - Can be consumed lazily
 /// - Can be chained with other iterators
 pub struct QueryIter<'w, T: 'static> {
     archetypes: std::slice::Iter<'w, Archetype>,
+    #[allow(clippy::type_complexity)]
     current: Option<Box<dyn Iterator<Item = (&'w EntityId, Acquirable<T>)> + 'w>>,
 }
 
@@ -26,10 +27,10 @@ impl<'w, T: 'static> Iterator for QueryIter<'w, T> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             // Try to get next item from current archetype iterator
-            if let Some(ref mut iter) = self.current {
-                if let Some(item) = iter.next() {
-                    return Some(item);
-                }
+            if let Some(ref mut iter) = self.current
+                && let Some(item) = iter.next()
+            {
+                return Some(item);
             }
 
             // Move to next archetype that has component T
