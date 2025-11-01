@@ -31,7 +31,7 @@ fn calculate_combat_power(player: &Player) -> u64 {
 }
 
 fn main() {
-    let mut world = World::default();
+    let world = World::default();
 
     println!("=== Setting up dataset ===");
 

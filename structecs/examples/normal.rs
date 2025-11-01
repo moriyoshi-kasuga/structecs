@@ -21,7 +21,7 @@ pub struct Zombie {
 }
 
 fn main() {
-    let mut world = World::default();
+    let world = World::default();
 
     println!("=== Adding Entities ===");
     

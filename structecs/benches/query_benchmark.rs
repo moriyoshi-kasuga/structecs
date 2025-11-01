@@ -24,7 +24,7 @@ pub struct Enemy {
 }
 
 fn setup_world(entity_count: usize) -> (World, Vec<EntityId>) {
-    let mut world = World::new();
+    let world = World::new();
     let mut ids = Vec::new();
 
     for i in 0..entity_count / 2 {
@@ -61,7 +61,7 @@ fn bench_add_entities(c: &mut Criterion) {
     for size in [100, 1000, 10000].iter() {
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, &size| {
             b.iter(|| {
-                let mut world = World::new();
+                let world = World::new();
                 for i in 0..size {
                     let player = Player {
                         position: Position {

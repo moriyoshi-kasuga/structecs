@@ -22,7 +22,7 @@ pub struct Monster {
 }
 
 fn main() {
-    let mut world = World::default();
+    let world = World::default();
 
     println!("=== Setting up large dataset ===");
     

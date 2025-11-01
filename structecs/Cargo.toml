@@ -4,7 +4,9 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+dashmap = "6.1"
 enum-table = "2.1"
+parking_lot = "0.12"
 rayon = "1.10"
 structecs-macros = { path = "../structecs-macros" }
 
