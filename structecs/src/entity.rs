@@ -26,16 +26,36 @@ impl EntityId {
 }
 
 /// Internal reference-counted data for an entity.
-pub(crate) struct EntityDataInner {
+pub(crate) struct EntityData {
     pub(crate) data: NonNull<u8>,
     pub(crate) counter: NonNull<AtomicUsize>,
     pub(crate) extractor: Arc<Extractor>,
 }
 
-unsafe impl Send for EntityDataInner {}
-unsafe impl Sync for EntityDataInner {}
+unsafe impl Send for EntityData {}
+unsafe impl Sync for EntityData {}
 
-impl Drop for EntityDataInner {
+impl EntityData {
+    pub(crate) fn new<E: crate::Extractable>(entity: E, extractor: Arc<Extractor>) -> Self {
+        let ptr = Box::into_raw(Box::new(entity)) as *mut u8;
+        Self {
+            data: unsafe { NonNull::new_unchecked(ptr) },
+            counter: Box::leak(Box::new(AtomicUsize::new(1))).into(),
+            extractor,
+        }
+    }
+
+    pub(crate) fn extract<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
+        let extracted = unsafe { self.extract_ptr::<T>()? };
+        Some(crate::Acquirable::new(extracted, self.clone()))
+    }
+
+    pub(crate) unsafe fn extract_ptr<T: 'static>(&self) -> Option<NonNull<T>> {
+        unsafe { self.extractor.extract_ptr::<T>(self.data) }
+    }
+}
+
+impl Drop for EntityData {
     fn drop(&mut self) {
         unsafe {
             if self.counter.as_ref().fetch_sub(1, Ordering::Release) > 1 {
@@ -44,11 +64,13 @@ impl Drop for EntityDataInner {
         }
         std::sync::atomic::fence(Ordering::Acquire);
         unsafe { (self.extractor.dropper)(self.data) };
-        unsafe { drop(Box::from_raw(self.counter.as_ptr())) };
+        unsafe {
+            core::ptr::drop_in_place(self.counter.as_ptr());
+        }
     }
 }
 
-impl Clone for EntityDataInner {
+impl Clone for EntityData {
     fn clone(&self) -> Self {
         unsafe {
             self.counter.as_ref().fetch_add(1, Ordering::Relaxed);
@@ -58,33 +80,5 @@ impl Clone for EntityDataInner {
             counter: self.counter,
             extractor: Arc::clone(&self.extractor),
         }
-    }
-}
-
-impl EntityDataInner {
-    pub(crate) unsafe fn extract_ptr<T: 'static>(&self) -> Option<NonNull<T>> {
-        unsafe { self.extractor.extract_ptr::<T>(self.data) }
-    }
-}
-
-/// Wrapper around entity data that provides component extraction.
-pub struct EntityData {
-    pub(crate) inner: EntityDataInner,
-}
-
-impl EntityData {
-    pub(crate) fn new<E: crate::Extractable>(entity: E, extractor: Arc<Extractor>) -> Self {
-        let ptr = Box::into_raw(Box::new(entity)) as *mut u8;
-        let inner = EntityDataInner {
-            data: unsafe { NonNull::new_unchecked(ptr) },
-            counter: Box::leak(Box::new(AtomicUsize::new(1))).into(),
-            extractor,
-        };
-        Self { inner }
-    }
-
-    pub fn extract<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
-        let extracted = unsafe { self.inner.extract_ptr::<T>()? };
-        Some(crate::Acquirable::new(extracted, self.inner.clone()))
     }
 }

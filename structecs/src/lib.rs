@@ -64,7 +64,6 @@ mod world;
 
 // Public exports
 pub use acquirable::Acquirable;
-pub use entity::{EntityData, EntityId};
+pub use entity::EntityId;
 pub use extractable::{Extractable, ExtractionMetadata};
-pub use extractor::Extractor;
 pub use world::World;

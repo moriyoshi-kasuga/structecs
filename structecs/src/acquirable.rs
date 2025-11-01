@@ -1,13 +1,13 @@
 use std::{ops::Deref, ptr::NonNull};
 
-use crate::entity::EntityDataInner;
+use crate::entity::EntityData;
 
 /// A smart pointer to a component that keeps the entity data alive.
 ///
 /// Implements `Deref` for transparent access to the component.
 pub struct Acquirable<T: 'static> {
     target: NonNull<T>,
-    inner: EntityDataInner,
+    inner: EntityData,
 }
 
 impl<T: 'static> AsRef<T> for Acquirable<T> {
@@ -25,7 +25,7 @@ impl<T: 'static> Deref for Acquirable<T> {
 }
 
 impl<T: 'static> Acquirable<T> {
-    pub(crate) fn new(target: NonNull<T>, inner: EntityDataInner) -> Self {
+    pub(crate) fn new(target: NonNull<T>, inner: EntityData) -> Self {
         Self { target, inner }
     }
 

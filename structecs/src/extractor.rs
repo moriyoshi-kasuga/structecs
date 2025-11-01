@@ -21,14 +21,6 @@ impl Extractor {
         }
     }
 
-    /// Extract a reference to a component of type T from entity data.
-    pub fn extract<T: 'static>(&self, data: NonNull<u8>) -> Option<&T> {
-        let type_id = TypeId::of::<T>();
-        let offset = self.offsets.get(&type_id)?;
-        let ptr = unsafe { data.as_ptr().add(*offset) as *const T };
-        Some(unsafe { &*ptr })
-    }
-
     /// Extract a pointer to a component of type T from entity data.
     ///
     /// # Safety
@@ -37,19 +29,6 @@ impl Extractor {
         let type_id = TypeId::of::<T>();
         let offset = self.offsets.get(&type_id)?;
         Some(unsafe { data.add(*offset).cast::<T>() })
-    }
-
-    /// Extract a reference to a component, panicking if not found.
-    ///
-    /// # Safety
-    /// This function assumes that the type T is present in the extractor's offsets.
-    pub unsafe fn extract_unchecked<T: 'static>(&self, data: NonNull<u8>) -> &T {
-        let type_id = TypeId::of::<T>();
-        let offset = self.offsets.get(&type_id).unwrap();
-        unsafe {
-            let ptr = data.as_ptr().add(*offset) as *const T;
-            &*ptr
-        }
     }
 
     /// Check if this extractor can extract a component of type T.
