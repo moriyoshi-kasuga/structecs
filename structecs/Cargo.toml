@@ -6,3 +6,10 @@ edition.workspace = true
 [dependencies]
 enum-table = "2.1"
 structecs-macros = { path = "../structecs-macros" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "query_benchmark"
+harness = false
