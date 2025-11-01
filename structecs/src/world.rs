@@ -5,7 +5,6 @@ use std::sync::{
 };
 
 use dashmap::DashMap;
-use rayon::prelude::*;
 
 use crate::{
     Acquirable, EntityId, Extractable,
@@ -125,89 +124,37 @@ impl World {
         }
     }
 
-    /// Create an iterator over all entities with component T.
+    /// Query all entities with component T.
     ///
-    /// This method snapshots data from relevant archetypes and returns an iterator.
+    /// This method snapshots data from relevant archetypes and returns a Vec.
     /// Locks are held briefly during the snapshot phase, then released immediately,
     /// allowing concurrent operations to proceed without blocking.
     ///
     /// # Performance
     ///
     /// This method is optimized for struct-based queries. Since structecs manages
-    /// entities at the struct level (not individual components), iteration is
-    /// straightforward and efficient.
+    /// entities at the struct level (not individual components), querying is
+    /// straightforward and efficient. Results are collected into a single Vec
+    /// to minimize allocations.
     ///
     /// # Concurrency
     ///
     /// Multiple threads can call this method simultaneously. Each archetype is
     /// locked independently and briefly, minimizing contention.
-    pub fn query_iter<T: 'static>(&self) -> impl Iterator<Item = (EntityId, Acquirable<T>)> {
-        // Snapshot relevant archetypes in a single pass
-        self.archetypes
-            .iter()
-            .filter_map(|entry| {
-                let archetype = entry.value();
-                if archetype.has_component::<T>() {
-                    // Snapshot this archetype's data while holding the lock
-                    Some(archetype.iter_component::<T>().collect::<Vec<_>>())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flatten()
+    pub fn query<T: 'static>(&self) -> Vec<(EntityId, Acquirable<T>)> {
+        let mut results = Vec::new();
+        
+        for entry in self.archetypes.iter() {
+            let archetype = entry.value();
+            if archetype.has_component::<T>() {
+                results.extend(archetype.iter_component::<T>());
+            }
+        }
+        
+        results
     }
 
-    /// Create a parallel iterator over all entities with component T.
-    ///
-    /// Uses Rayon for parallel processing across archetypes. This method is
-    /// optimized for large datasets where the parallelization overhead is
-    /// justified by the performance gains.
-    ///
-    /// # Performance Considerations
-    ///
-    /// - **Best for**: Large entity counts (>10,000 entities) with CPU-intensive operations
-    /// - **Not ideal for**: Small datasets or simple queries (use `query_iter()` instead)
-    /// - **Lock strategy**: Each archetype is locked independently and briefly during snapshotting
-    ///
-    /// # Concurrency
-    ///
-    /// Multiple threads can call this method simultaneously. The DashMap allows
-    /// lock-free reads, and each archetype's RwLock is held only briefly during
-    /// the snapshot phase. After snapshotting, parallel processing proceeds without
-    /// holding any locks.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Process large numbers of entities in parallel
-    /// world.par_query_iter::<Player>()
-    ///     .for_each(|(id, player)| {
-    ///         // CPU-intensive operation here
-    ///     });
-    /// ```
-    pub fn par_query_iter<T: 'static + Send + Sync>(
-        &self,
-    ) -> impl ParallelIterator<Item = (EntityId, Acquirable<T>)>
-    where
-        Acquirable<T>: Send,
-    {
-        // Snapshot all relevant archetypes in parallel
-        self.archetypes
-            .iter()
-            .par_bridge()
-            .filter_map(|entry| {
-                let archetype = entry.value();
-                if archetype.has_component::<T>() {
-                    // Snapshot this archetype's data while holding the lock
-                    Some(archetype.iter_component::<T>().collect::<Vec<_>>())
-                } else {
-                    None
-                }
-            })
-            .flatten()
-    }
+
 
     /// Get the number of entities in the world.
     pub fn entity_count(&self) -> usize {
@@ -258,36 +205,17 @@ pub struct QueryWith<'w, T, A> {
 }
 
 impl<'w, T: 'static, A: AdditionalTuple> QueryWith<'w, T, A> {
-    /// Create an iterator over entities with base struct T and additionals A.
-    pub fn iter(&'w self) -> impl Iterator<Item = (EntityId, Acquirable<T>, A::Output)> + 'w {
-        self.world.query_iter::<T>().map(move |(id, base)| {
-            let data = self.world.get_entity_data(&id).unwrap();
-            let additionals = A::extract_from(&data);
-            (id, base, additionals)
-        })
-    }
-
-    /// Create a parallel iterator over entities with base struct T and additionals A.
-    pub fn par_iter(
-        &'w self,
-    ) -> impl ParallelIterator<Item = (EntityId, Acquirable<T>, A::Output)> + 'w
-    where
-        T: Send + Sync,
-        Acquirable<T>: Send,
-        A::Output: Send + 'w,
-    {
-        // Snapshot the data first
-        let snapshot: Vec<_> = self
-            .world
-            .query_iter::<T>()
+    /// Query entities with base struct T and additionals A.
+    pub fn query(&'w self) -> Vec<(EntityId, Acquirable<T>, A::Output)> {
+        self.world
+            .query::<T>()
+            .into_iter()
             .map(|(id, base)| {
                 let data = self.world.get_entity_data(&id).unwrap();
                 let additionals = A::extract_from(&data);
                 (id, base, additionals)
             })
-            .collect();
-
-        snapshot.into_par_iter()
+            .collect()
     }
 }
 

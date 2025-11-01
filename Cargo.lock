@@ -524,7 +524,6 @@ dependencies = [
  "dashmap",
  "enum-table",
  "parking_lot",
- "rayon",
  "structecs-macros",
 ]
 

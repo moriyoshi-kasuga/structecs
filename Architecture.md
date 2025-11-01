@@ -106,17 +106,17 @@ pub struct Player {
 }
 
 // struct/enum単位でクエリ可能（階層内の明示的にマークされた型）
-for (id, entity) in world.query_iter::<Entity>() {
+for (id, entity) in world.query::<Entity>() {
     // Entity, LivingEntity.entity, Player.living.entity にアクセス
     println!("Name: {}", entity.name);
 }
 
-for (id, living) in world.query_iter::<LivingEntity>() {
+for (id, living) in world.query::<LivingEntity>() {
     // LivingEntity, Player.living にアクセス
     println!("Health: {}/{}", living.health, living.max_health);
 }
 
-for (id, player) in world.query_iter::<Player>() {
+for (id, player) in world.query::<Player>() {
     // Player全体にアクセス
     println!("Player: {}", player.living.entity.name);
 }
@@ -173,7 +173,7 @@ pub struct Player {
     pub health: AtomicU32,  // ← ロックフリーな変更
 }
 
-for (id, health) in world.query_iter::<AtomicU32>() {
+for (id, health) in world.query::<AtomicU32>() {
     health.fetch_add(10, Ordering::Relaxed);
 }
 
@@ -183,7 +183,7 @@ pub struct Inventory {
     pub items: Mutex<Vec<Item>>,  // ← 必要な時だけロック
 }
 
-for (id, inventory) in world.query_iter::<Mutex<Vec<Item>>>() {
+for (id, inventory) in world.query::<Mutex<Vec<Item>>>() {
     let mut items = inventory.lock().unwrap();
     items.push(new_item);
 }
@@ -195,17 +195,17 @@ pub struct Position {
 }
 
 // 複数スレッドで同時に読み取り可能
-for (id, pos) in world.query_iter::<RwLock<Vec3>>() {
+for (id, pos) in world.query::<RwLock<Vec3>>() {
     let coords = pos.read().unwrap();
     println!("Position: {:?}", *coords);
 }
 ```
 
-**なぜ`query_iter_mut()`を提供しないのか:**
+**なぜ`query_mut()`を提供しないのか:**
 
 ```rust
 // もしこんなAPIがあったら...
-for (id, mut player) in world.query_iter_mut::<Player>() {
+for (id, mut player) in world.query_mut::<Player>() {
     player.health += 10;  // ← この間、World全体がロックされる
 }
 ```
@@ -239,7 +239,7 @@ structecs:
 ```rust
 // 好きなように書ける
 fn update_physics(world: &World, delta: f32) {
-    for (id, pos) in world.query_iter::<RwLock<Vec3>>() {
+    for (id, pos) in world.query::<RwLock<Vec3>>() {
         let vel = world.extract_component::<Vec3>(&id).unwrap();
         let mut pos = pos.write().unwrap();
         pos.x += vel.x * delta;
@@ -481,11 +481,11 @@ impl World {
         -> Option<Acquirable<T>>;
     
     // イテレータクエリ（&self - 並行安全、スナップショット）
-    pub fn query_iter<T: 'static>(&self) 
+    pub fn query<T: 'static>(&self) 
         -> impl Iterator<Item = (EntityId, Acquirable<T>)>;
     
     // 並列クエリ（&self - 並行安全）
-    pub fn par_query_iter<T: 'static + Send + Sync>(&self) 
+    pub fn par_query<T: 'static + Send + Sync>(&self) 
         -> impl ParallelIterator<Item = (EntityId, Acquirable<T>)>;
 }
 ```
@@ -725,7 +725,7 @@ world.add_additional(&player_id, AttackBuff { power: 50, duration: 10 })?;
 world.add_additional(&player_id, PoisonEffect { damage: 5, ticks: 20 })?;
 
 // 毎フレームの処理
-for (id, player) in world.query_iter::<Player>() {
+for (id, player) in world.query::<Player>() {
     // バフを確認
     if let Some(buff) = world.extract_additional::<AttackBuff>(&id) {
         apply_attack_bonus(player, buff.power);
@@ -793,13 +793,13 @@ World::add_entity():
 - 異なるアーキタイプへの追加 → 完全並列
 - 同じアーキタイプへの追加 → RwLockで直列化（必要最小限）
 
-#### 2. クエリ実行フロー（query_iter）
+#### 2. クエリ実行フロー（query）
 
 ```
 ユーザーコード:
-  world.query_iter::<Health>()
+  world.query::<Health>()
            ↓
-World::query_iter():
+World::query():
   1. すべてのArchetypeをイテレート（DashMap::iter）
   2. 各Archetypeを短時間read lock
   3. has_component::<Health>()でフィルタ
@@ -832,13 +832,13 @@ World::query_iter():
 - メモリ使用量増加（スナップショット保持）
 - クエリ結果は「時点スナップショット」（リアルタイムではない）
 
-#### 3. 並列クエリフロー（par_query_iter）
+#### 3. 並列クエリフロー（par_query）
 
 ```
 ユーザーコード:
-  world.par_query_iter::<Position>()
+  world.par_query::<Position>()
            ↓
-World::par_query_iter():
+World::par_query():
   1. すべてのArchetypeをVecに収集（Arc<RwLock>のクローン）
   2. Rayon の into_par_iter() で並列化
   3. 各スレッドが独立してArchetypeをread lock
@@ -982,7 +982,7 @@ world.add_entity(Player { ... });  // Player archetype をロック
 world.add_entity(Monster { ... }); // Monster archetype をロック
 
 // スレッド3（同時実行）
-world.query_iter::<Item>();        // Item archetype を読み取りロック
+world.query::<Item>();        // Item archetype を読み取りロック
 ```
 
 **ロック競合:** なし
@@ -991,12 +991,12 @@ world.query_iter::<Item>();        // Item archetype を読み取りロック
 
 ```rust
 // スレッド1
-for (id, player) in world.query_iter::<Player>() {
+for (id, player) in world.query::<Player>() {
     // 読み取りロック（短時間、スナップショット後解放）
 }
 
 // スレッド2（同時実行）
-for (id, player) in world.query_iter::<Player>() {
+for (id, player) in world.query::<Player>() {
     // 同じArchetypeに読み取りロック（並列OK）
 }
 
@@ -1026,7 +1026,7 @@ world.add_entity(Player { ... });
 
 ```rust
 // メインスレッド
-for (id, player) in world.query_iter::<Player>() {
+for (id, player) in world.query::<Player>() {
     // ← スナップショット取得後、ロック解放済み
     
     // このループ中に...
@@ -1196,8 +1196,8 @@ impl Drop for EntityDataInner {
 
 | 方式 | 時間 | スピードアップ |
 |------|------|---------------|
-| Sequential（query_iter） | 37ms | 1.0x |
-| Parallel（par_query_iter） | 27ms | **1.35x** |
+| Sequential（query） | 37ms | 1.0x |
+| Parallel（par_query） | 27ms | **1.35x** |
 
 **並行追加（15,000エンティティ、3スレッド）:**
 
@@ -1237,7 +1237,7 @@ let players: Vec<_> = world.query_collect::<Player>();
 for player in players { ... }
 
 // ✅ 速い（アロケーションなし）
-for (id, player) in world.query_iter::<Player>() { ... }
+for (id, player) in world.query::<Player>() { ... }
 ```
 
 **4. スナップショット戦略:**
@@ -1251,25 +1251,25 @@ for (id, player) in world.query_iter::<Player>() { ... }
 ```
 粗粒度ロック（従来のMutex<World>）:
   add_entity(): ████████ (World全体ロック)
-  query_iter(): ██████████ (World全体ロック)
+  query(): ██████████ (World全体ロック)
   → 完全に直列化
 
 細粒度ロック（structecs）:
   add_entity(Player):  ██ (Playerアーキタイプのみ)
   add_entity(Monster):   ██ (Monsterアーキタイプのみ) ← 並列！
-  query_iter(Item):        ■ (Itemアーキタイプのみ) ← 並列！
+  query(Item):        ■ (Itemアーキタイプのみ) ← 並列！
 ```
 
 ### いつ並列クエリを使うべきか
 
-**`par_query_iter()` が有利な場合:**
+**`par_query()` が有利な場合:**
 
 - エンティティ数 > 10,000
 - 各エンティティの処理が重い（計算、I/O）
 - CPU バウンドな処理
 - 複数アーキタイプにまたがるクエリ
 
-**`query_iter()` が有利な場合:**
+**`query()` が有利な場合:**
 
 - エンティティ数 < 10,000
 - 各エンティティの処理が軽い（単純な読み取り）
@@ -1308,9 +1308,9 @@ structecsは**69個の統合テスト**で検証されており、本番環境�
 - query_multiple_archetypes()    // 複数アーキタイプのクエリ
 
 // クエリ機能
-- query_iter_basic()             // 基本的なイテレータクエリ
-- query_iter_empty()             // 空のクエリ処理
-- par_query_iter_basic()         // 並列クエリ
+- query_basic()             // 基本的なイテレータクエリ
+- query_empty()             // 空のクエリ処理
+- par_query_basic()         // 並列クエリ
 - query_mixed_types()            // 混合型のクエリ
 
 // Additional Components（9テスト）
@@ -1399,7 +1399,7 @@ test integration_test::add_entity_and_retrieve ... ok (0.1ms)
 test integration_test::add_additional_component ... ok (0.2ms)
 test integration_test::query_with_single_additional ... ok (8ms)
 test integration_test::query_with_multiple_additional ... ok (10ms)
-test integration_test::query_iter_basic ... ok (12ms)
+test integration_test::query_basic ... ok (12ms)
 test memory_safety_test::memory_leak_detection_with_cycles ... ok (3.2s)
 test edge_cases_test::large_entity_count ... ok (18ms)
 ...
@@ -1531,7 +1531,7 @@ struct Agent {
 
 ### 1. なぜwrite APIを提供しないのか
 
-**判断:** `query_iter_mut()` や `extract_component_mut()` は**提供しない**。
+**判断:** `query_mut()` や `extract_component_mut()` は**提供しない**。
 
 **理由:**
 
@@ -1539,7 +1539,7 @@ struct Agent {
 
 ```rust
 // もしこんなAPIがあったら...
-for (id, mut player) in world.query_iter_mut::<Player>() {
+for (id, mut player) in world.query_mut::<Player>() {
     player.health += 10;
     // ← この間、Worldが排他ロック
     // ← 他のすべてのスレッドがブロック
@@ -1567,7 +1567,7 @@ struct Player {
 
 ```rust
 // もしWorldがwrite APIを提供したら...
-for (id, mut player) in world.query_iter_mut::<Player>() {
+for (id, mut player) in world.query_mut::<Player>() {
     // Player全体が可変借用
     // → 細かい制御不可能
 }
@@ -1733,7 +1733,7 @@ unsafe { (self.extractor.dropper)(self.data) };
 
 - ✅ コアアーキテクチャ（World, Entity, Archetype）
 - ✅ 並行処理（DashMap + RwLock）
-- ✅ クエリシステム（query_iter, par_query_iter）
+- ✅ クエリシステム（query, par_query）
 - ✅ コンポーネント抽出（Extractable derive macro）
 - ✅ メモリ管理（参照カウント、安全なDrop）
 
@@ -1910,7 +1910,7 @@ struct Player {
 // 3. Worldを作成して使う
 let world = World::default();
 let id = world.add_entity(Player { /* ... */ });
-for (id, player) in world.query_iter::<Player>() {
+for (id, player) in world.query::<Player>() {
     // 並行安全なアクセス
 }
 ```

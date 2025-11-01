@@ -184,7 +184,7 @@ fn test_extract_component_nonexistent() {
 }
 
 #[test]
-fn test_query_iter() {
+fn test_query() {
     let world = World::new();
 
     for i in 0..10 {
@@ -196,7 +196,7 @@ fn test_query_iter() {
     }
 
     let mut count = 0;
-    for (_id, player) in world.query_iter::<Player>() {
+    for (_id, player) in world.query::<Player>() {
         assert_eq!(player.health, 100);
         count += 1;
     }
@@ -205,11 +205,11 @@ fn test_query_iter() {
 }
 
 #[test]
-fn test_query_iter_empty() {
+fn test_query_empty() {
     let world = World::new();
 
     let mut count = 0;
-    for _ in world.query_iter::<Player>() {
+    for _ in world.query::<Player>() {
         count += 1;
     }
 
@@ -217,7 +217,7 @@ fn test_query_iter_empty() {
 }
 
 #[test]
-fn test_query_iter_multiple_types() {
+fn test_query_multiple_types() {
     let world = World::new();
 
     for i in 0..5 {
@@ -235,39 +235,11 @@ fn test_query_iter_multiple_types() {
         });
     }
 
-    let player_count = world.query_iter::<Player>().count();
-    let enemy_count = world.query_iter::<Enemy>().count();
+    let player_count = world.query::<Player>().len();
+    let enemy_count = world.query::<Enemy>().len();
 
     assert_eq!(player_count, 5);
     assert_eq!(enemy_count, 3);
-}
-
-#[test]
-fn test_parallel_query_iter() {
-    use rayon::prelude::*;
-
-    let world = World::new();
-
-    for i in 0..1000 {
-        world.add_entity(Player {
-            name: format!("Player{}", i),
-            health: 100,
-            level: i,
-        });
-    }
-
-    let count: usize = world.par_query_iter::<Player>().count();
-    assert_eq!(count, 1000);
-}
-
-#[test]
-fn test_parallel_query_iter_empty() {
-    use rayon::prelude::*;
-
-    let world = World::new();
-
-    let count: usize = world.par_query_iter::<Player>().count();
-    assert_eq!(count, 0);
 }
 
 #[test]
@@ -284,7 +256,7 @@ fn test_large_entity_set() {
 
     assert_eq!(world.entity_count(), 10_000);
 
-    let query_count = world.query_iter::<Player>().count();
+    let query_count = world.query::<Player>().len();
     assert_eq!(query_count, 10_000);
 }
 
@@ -324,7 +296,7 @@ fn test_mixed_operations() {
     assert_eq!(world.entity_count(), 120);
 
     // Verify query
-    let count = world.query_iter::<Player>().count();
+    let count = world.query::<Player>().len();
     assert_eq!(count, 120);
 }
 
@@ -376,7 +348,7 @@ fn test_query_consistency() {
 
     // Run multiple queries and ensure consistent results
     for _ in 0..10 {
-        let count = world.query_iter::<Player>().count();
+        let count = world.query::<Player>().len();
         assert_eq!(count, 100);
     }
 }

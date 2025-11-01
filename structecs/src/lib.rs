@@ -41,7 +41,7 @@
 //! let player_id = world.add_entity(player);
 //!
 //! // Iterator-based query (efficient, no allocation)
-//! for (id, entity) in world.query_iter::<Entity>() {
+//! for (id, entity) in world.query::<Entity>() {
 //!     println!("Entity: {:?}", *entity);
 //! }
 //!

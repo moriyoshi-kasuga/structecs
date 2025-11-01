@@ -65,12 +65,12 @@ fn main() {
     });
 
     // Query all players
-    for (id, player) in world.query_iter::<Player>() {
+    for (id, player) in world.query::<Player>() {
         println!("[{}] {}: {} HP", id.id(), player.entity.name, player.health);
     }
 
     // Extract nested components
-    for (id, entity) in world.query_iter::<Entity>() {
+    for (id, entity) in world.query::<Entity>() {
         println!("Entity: {}", entity.name);
         
         // Try to extract as Player
@@ -81,7 +81,7 @@ fn main() {
 
     // Parallel queries for large datasets
     use rayon::prelude::*;
-    world.par_query_iter::<Player>()
+    world.par_query::<Player>()
         .for_each(|(id, player)| {
             // Process players in parallel
         });
@@ -160,7 +160,7 @@ let player_id = world.add_entity(Player {
 });
 
 // Query entities
-for (id, player) in world.query_iter::<Player>() {
+for (id, player) in world.query::<Player>() {
     println!("[{}] {}: {} HP", id.id(), player.entity.name, player.health);
 }
 
@@ -172,8 +172,7 @@ world.remove_entity(&player_id);
 
 - `add_entity<E: Extractable>(entity: E) -> EntityId` - Register new entity
 - `remove_entity(entity_id: &EntityId) -> bool` - Remove entity from world
-- `query_iter<T: 'static>() -> impl Iterator<Item = (EntityId, Acquirable<T>)>` - Efficiently iterate entities with component T
-- `par_query_iter<T: 'static>() -> impl ParallelIterator` - Parallel iteration for large datasets
+- `query<T: 'static>() -> Vec(EntityId, Acquirable<T>)>` - Efficiently iterate entities with component T
 - `extract_component<T>(entity_id: &EntityId) -> Option<Acquirable<T>>` - Get specific component
 
 **Additional component operations:**
@@ -376,13 +375,10 @@ structecs is designed for high performance with real-world workloads:
 ### Benchmark Results (Release mode)
 
 **Basic Operations:**
+
 - Adding 10,000 entities: ~16ms
 - Querying 10,000 entities (iterator): ~4ms
 - Querying specific type (10,000): ~3.4ms
-
-**Parallel Queries:**
-- Sequential query with computation: 37ms
-- Parallel query with computation: 27ms (1.35x speedup)
 
 **Key Optimizations:**
 
@@ -391,60 +387,11 @@ structecs is designed for high performance with real-world workloads:
 3. **Extractor Caching**: Each type gets one shared extractor
 4. **Compile-time Offsets**: Component access via direct pointer arithmetic
 
-**When to Use Parallel Queries:**
-
-Use `par_query_iter()` instead of `query_iter()` when:
-- Processing >10,000 entities
-- Performing non-trivial work per entity
-- CPU-bound operations benefit from parallelism
-
-For simple operations (e.g., summing a field), sequential queries may be faster due to parallelization overhead.
-
 ---
 
 ## Testing
 
-structecs has a comprehensive test suite with **69 tests** covering:
-
-### Integration Tests (19 tests)
-- World creation and management
-- Entity addition and removal
-- Query operations (sequential and parallel)
-- Component extraction
-- Multiple entity types
-- Large entity sets (10,000+ entities)
-
-### Concurrent Tests (10 tests)
-- 10-100 thread concurrent insertions
-- Concurrent reads while writing
-- Data race detection
-- Mixed operations (insert/remove/read/extract)
-- Heavy load stress tests (5,000+ entities across 100 threads)
-
-### Memory Safety Tests (10 tests)
-- Memory leak detection
-- Drop behavior verification
-- Large entity lifecycle management
-- Parallel query memory safety
-- Massive insertion/removal (50,000 entities)
-
-### Edge Case Tests (21 tests)
-- Empty world operations
-- Single entity operations
-- Empty and Unicode strings
-- Maximum values
-- Rapid add/remove cycles
-- Multiple entity types in same world
-- Archetype tracking
-
-### Additional Components Tests (9 tests)
-- Add and extract additional components
-- Check for additional existence
-- Remove additional components
-- Replace additionals of same type
-- Multiple additionals per entity
-- Query with additionals (empty, single, multiple)
-- Drop safety for additional components
+structecs has a comprehensive test suite:
 
 **Run tests:**
 
@@ -459,12 +406,6 @@ cargo test --test memory_safety_test
 cargo test --test edge_cases_test
 ```
 
-**Test results:**
-- ✅ 69 tests passed
-- ✅ 0 failures
-- ✅ 0 warnings
-- ✅ All tests complete in ~12 seconds
-
 ---
 
 ## Comparison with Traditional ECS
@@ -478,7 +419,6 @@ cargo test --test edge_cases_test
 | **Query Pattern** | Compile-time system parameters | Runtime extraction |
 | **Nesting** | Components are flat | Components can nest ✓ |
 | **Cache Coherency** | Excellent (packed arrays) | Good (archetype storage) |
-| **Parallelism** | Built-in parallel systems | Parallel queries (Rayon) ✓ |
 | **Flexibility** | Constrained by System API | Maximum flexibility ✓ |
 
 ---
@@ -513,7 +453,6 @@ cargo test --test edge_cases_test
 ### Phase 4: Features (In Progress)
 
 - [x] Additional components (optional runtime data)
-- [ ] Event system
 - [ ] Query filtering and composition
 - [ ] Advanced query builders
 

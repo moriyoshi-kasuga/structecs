@@ -206,7 +206,7 @@ fn test_query_with_single_additional() {
     );
 
     // クエリで取得
-    let results: Vec<_> = world.query_with::<Player, (PlayerBuff,)>().iter().collect();
+    let results: Vec<_> = world.query_with::<Player, (PlayerBuff,)>().query();
     assert_eq!(results.len(), 2);
 
     for (id, _, (buff,)) in results {
@@ -264,8 +264,7 @@ fn test_query_with_multiple_additionals() {
     // クエリで取得
     let results: Vec<_> = world
         .query_with::<Player, (PlayerBuff, PlayerDeathed)>()
-        .iter()
-        .collect();
+        .query();
 
     assert_eq!(results.len(), 3);
 

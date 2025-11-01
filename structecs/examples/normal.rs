@@ -52,23 +52,23 @@ fn main() {
 
     println!("\n=== Query All Entities (Iterator) ===");
     // Using iterator-based query (efficient, no allocation until snapshot)
-    for (id, entity) in world.query_iter::<Entity>() {
+    for (id, entity) in world.query::<Entity>() {
         println!("[{}] Entity: {:?}", id.id(), *entity);
     }
 
     println!("\n=== Query Players Only ===");
-    for (id, player) in world.query_iter::<Player>() {
+    for (id, player) in world.query::<Player>() {
         println!("[{}] Player: {:?}", id.id(), *player);
     }
 
     println!("\n=== Query Zombies Only ===");
-    for (id, zombie) in world.query_iter::<Zombie>() {
+    for (id, zombie) in world.query::<Zombie>() {
         println!("[{}] Zombie: {:?}", id.id(), *zombie);
     }
 
     println!("\n=== Extract Components ===");
     // Extract nested components from entities
-    for (id, entity) in world.query_iter::<Entity>() {
+    for (id, entity) in world.query::<Entity>() {
         print!("[{}] {}", id.id(), entity.name);
 
         // Try to extract as Player
@@ -103,7 +103,7 @@ fn main() {
     // Query performance
     let start = std::time::Instant::now();
     let mut count = 0;
-    for (_, _entity) in world.query_iter::<Entity>() {
+    for (_, _entity) in world.query::<Entity>() {
         count += 1;
     }
     let query_time = start.elapsed();
@@ -112,7 +112,7 @@ fn main() {
     // Specific type query
     let start = std::time::Instant::now();
     let mut count = 0;
-    for (_, _player) in world.query_iter::<Player>() {
+    for (_, _player) in world.query::<Player>() {
         count += 1;
     }
     let player_query_time = start.elapsed();

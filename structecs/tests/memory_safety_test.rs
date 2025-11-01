@@ -83,7 +83,7 @@ fn test_large_entity_lifecycle() {
     }
 
     // Query and verify
-    let count = world.query_iter::<LargeEntity>().count();
+    let count = world.query::<LargeEntity>().len();
     assert_eq!(count, 100);
 
     // Remove half
@@ -179,7 +179,7 @@ fn test_drop_behavior() {
 }
 
 #[test]
-fn test_query_iterator_safety() {
+fn test_queryator_safety() {
     let world = World::new();
 
     // Insert entities
@@ -190,23 +190,21 @@ fn test_query_iterator_safety() {
     }
 
     // Create multiple iterators
-    let iter1 = world.query_iter::<TestEntity>();
-    let iter2 = world.query_iter::<TestEntity>();
-    let iter3 = world.query_iter::<TestEntity>();
+    let iter1 = world.query::<TestEntity>();
+    let iter2 = world.query::<TestEntity>();
+    let iter3 = world.query::<TestEntity>();
 
     // Consume iterators
-    assert_eq!(iter1.count(), 1000);
-    assert_eq!(iter2.count(), 1000);
-    assert_eq!(iter3.count(), 1000);
+    assert_eq!(iter1.len(), 1000);
+    assert_eq!(iter2.len(), 1000);
+    assert_eq!(iter3.len(), 1000);
 
     // Original data should still be accessible
-    assert_eq!(world.query_iter::<TestEntity>().count(), 1000);
+    assert_eq!(world.query::<TestEntity>().len(), 1000);
 }
 
 #[test]
-fn test_parallel_query_memory_safety() {
-    use rayon::prelude::*;
-
+fn test_query_memory_safety() {
     let world = World::new();
 
     // Insert large number of entities
@@ -218,9 +216,9 @@ fn test_parallel_query_memory_safety() {
         ids.push(id);
     }
 
-    // Run parallel query multiple times
+    // Run query multiple times
     for _ in 0..10 {
-        let count: usize = world.par_query_iter::<TestEntity>().count();
+        let count: usize = world.query::<TestEntity>().len();
 
         assert_eq!(count, 10_000);
     }
