@@ -30,7 +30,7 @@ fn test_memory_cleanup_after_remove() {
     // Remove all entities
     for id in &ids {
         let removed = world.remove_entity(id);
-        assert!(removed);
+        assert!(removed.is_ok());
     }
 
     assert_eq!(world.entity_count(), 0);
@@ -305,7 +305,7 @@ fn test_concurrent_extract_memory_safety() {
             for _ in 0..1000 {
                 let idx = (thread_id * 7) % 1000;
                 let entity = world_clone.extract_component::<TestEntity>(&ids_clone[idx]);
-                if let Some(entity) = entity {
+                if let Ok(entity) = entity {
                     assert!(!entity.data.is_empty());
                 }
             }

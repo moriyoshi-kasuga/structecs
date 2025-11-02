@@ -131,7 +131,7 @@ fn bench_extract_component(c: &mut Criterion) {
 
     group.bench_function("extract_nested", |b| {
         b.iter(|| {
-            if let Some(pos) = world.extract_component::<Position>(&ids[0]) {
+            if let Ok(pos) = world.extract_component::<Position>(&ids[0]) {
                 black_box(pos);
             }
         });

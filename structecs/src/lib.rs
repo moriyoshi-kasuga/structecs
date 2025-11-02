@@ -46,7 +46,7 @@
 //! }
 //!
 //! // Extract specific component
-//! if let Some(health) = world.extract_component::<u32>(&player_id) {
+//! if let Ok(health) = world.extract_component::<u32>(&player_id) {
 //!     println!("Health: {}", *health);
 //! }
 //! ```
@@ -58,6 +58,7 @@ pub use structecs_macros::Extractable;
 mod acquirable;
 mod archetype;
 mod entity;
+mod error;
 mod extractable;
 mod extractor;
 mod world;
@@ -65,5 +66,6 @@ mod world;
 // Public exports
 pub use acquirable::Acquirable;
 pub use entity::EntityId;
+pub use error::WorldError;
 pub use extractable::{Extractable, ExtractionMetadata};
 pub use world::World;

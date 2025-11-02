@@ -300,7 +300,7 @@ fn test_concurrent_extract_operations() {
             for i in 0..100 {
                 let idx = (thread_id * 100 + i) % 1000;
                 let player = world_clone.extract_component::<Player>(&ids_clone[idx]);
-                assert!(player.is_some());
+                assert!(player.is_ok());
                 assert_eq!(player.unwrap().health, 100);
             }
         });

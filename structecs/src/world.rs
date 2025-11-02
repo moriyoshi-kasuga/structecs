@@ -11,7 +11,7 @@ use dashmap::DashMap;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 
 use crate::{
-    Acquirable, EntityId, Extractable,
+    Acquirable, EntityId, Extractable, WorldError,
     archetype::{Archetype, ArchetypeId},
     entity::EntityData,
 };
@@ -166,46 +166,137 @@ impl World {
         entity_ids
     }
 
-    pub fn add_additional<E: Extractable>(&self, entity_id: &EntityId, entity: E) -> bool {
-        let data = match self.get_entity_data(entity_id) {
-            Some(d) => d,
-            None => return false,
-        };
+    /// Add an additional component to an entity.
+    ///
+    /// Returns `Ok(())` if the component was added successfully.
+    /// Returns `Err(WorldError::EntityNotFound)` if the entity doesn't exist.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// world.add_additional(&player_id, Buff { power: 10 })?;
+    /// ```
+    pub fn add_additional<E: Extractable>(
+        &self,
+        entity_id: &EntityId,
+        entity: E,
+    ) -> Result<(), WorldError> {
+        let data = self
+            .get_entity_data(entity_id)
+            .ok_or(WorldError::EntityNotFound(*entity_id))?;
         data.add_additional(entity);
-        true
+        Ok(())
     }
 
-    pub fn extract_additional<T: 'static>(&self, entity_id: &EntityId) -> Option<Acquirable<T>> {
-        let data = self.get_entity_data(entity_id)?;
+    /// Extract an additional component from an entity.
+    ///
+    /// Returns `Ok(Acquirable<T>)` if the additional component was found.
+    /// Returns `Err(WorldError::EntityNotFound)` if the entity doesn't exist.
+    /// Returns `Err(WorldError::AdditionalNotFound)` if the additional component doesn't exist.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let buff = world.extract_additional::<Buff>(&player_id)?;
+    /// println!("Buff power: {}", buff.power);
+    /// ```
+    pub fn extract_additional<T: 'static>(
+        &self,
+        entity_id: &EntityId,
+    ) -> Result<Acquirable<T>, WorldError> {
+        let data = self
+            .get_entity_data(entity_id)
+            .ok_or(WorldError::EntityNotFound(*entity_id))?;
+
         data.extract_additional::<T>()
+            .ok_or(WorldError::AdditionalNotFound {
+                entity_id: *entity_id,
+                component_name: std::any::type_name::<T>(),
+            })
     }
 
-    pub fn remove_additional<T: 'static>(&self, entity_id: &EntityId) -> Option<Acquirable<T>> {
-        let data = self.get_entity_data(entity_id)?;
+    /// Remove an additional component from an entity.
+    ///
+    /// Returns `Ok(Acquirable<T>)` with the removed component if it existed.
+    /// Returns `Err(WorldError::EntityNotFound)` if the entity doesn't exist.
+    /// Returns `Err(WorldError::AdditionalNotFound)` if the additional component doesn't exist.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let buff = world.remove_additional::<Buff>(&player_id)?;
+    /// println!("Removed buff with power: {}", buff.power);
+    /// ```
+    pub fn remove_additional<T: 'static>(
+        &self,
+        entity_id: &EntityId,
+    ) -> Result<Acquirable<T>, WorldError> {
+        let data = self
+            .get_entity_data(entity_id)
+            .ok_or(WorldError::EntityNotFound(*entity_id))?;
+
         data.remove_additional::<T>()
+            .ok_or(WorldError::AdditionalNotFound {
+                entity_id: *entity_id,
+                component_name: std::any::type_name::<T>(),
+            })
     }
 
     /// Extract a specific component from an entity.
-    pub fn extract_component<T: 'static>(&self, entity_id: &EntityId) -> Option<Acquirable<T>> {
-        let archetype = self.get_archetype_by_entity(entity_id)?;
-        archetype.extract_entity(entity_id)
+    ///
+    /// Returns `Ok(Acquirable<T>)` if the component was found.
+    /// Returns `Err(WorldError::EntityNotFound)` if the entity doesn't exist.
+    /// Returns `Err(WorldError::ComponentNotFound)` if the component type doesn't exist on the entity.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let health = world.extract_component::<u32>(&player_id)?;
+    /// println!("Health: {}", *health);
+    /// ```
+    pub fn extract_component<T: 'static>(
+        &self,
+        entity_id: &EntityId,
+    ) -> Result<Acquirable<T>, WorldError> {
+        let archetype = self
+            .get_archetype_by_entity(entity_id)
+            .ok_or(WorldError::EntityNotFound(*entity_id))?;
+
+        archetype
+            .extract_entity(entity_id)
+            .ok_or(WorldError::ComponentNotFound {
+                entity_id: *entity_id,
+                component_name: std::any::type_name::<T>(),
+            })
     }
 
     /// Remove an entity from the world.
     ///
+    /// Returns `Ok(())` if the entity was removed successfully.
+    /// Returns `Err(WorldError::EntityNotFound)` if the entity doesn't exist.
+    ///
     /// This method is thread-safe and can be called concurrently from multiple threads.
-    pub fn remove_entity(&self, entity_id: &EntityId) -> bool {
-        let archetype_id = match self.entity_index.remove(entity_id) {
-            Some((_, id)) => id,
-            None => return false,
-        };
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// world.remove_entity(&player_id)?;
+    /// println!("Entity removed");
+    /// ```
+    pub fn remove_entity(&self, entity_id: &EntityId) -> Result<(), WorldError> {
+        let archetype_id = self
+            .entity_index
+            .remove(entity_id)
+            .map(|(_, id)| id)
+            .ok_or(WorldError::EntityNotFound(*entity_id))?;
 
-        if let Some(archetype) = self.archetypes.get(&archetype_id)
-            && let Some(_) = archetype.remove_entity(entity_id)
-        {
-            true
+        if let Some(archetype) = self.archetypes.get(&archetype_id) {
+            archetype
+                .remove_entity(entity_id)
+                .ok_or(WorldError::ArchetypeNotFound(*entity_id))?;
+            Ok(())
         } else {
-            false
+            Err(WorldError::ArchetypeNotFound(*entity_id))
         }
     }
 

@@ -41,11 +41,11 @@ fn test_add_and_extract_additional() {
         duration: 10,
     };
 
-    assert!(world.add_additional(&player_id, buff));
+    assert!(world.add_additional(&player_id, buff).is_ok());
 
     // additionalを抽出
     let extracted_buff = world.extract_additional::<PlayerBuff>(&player_id);
-    assert!(extracted_buff.is_some());
+    assert!(extracted_buff.is_ok());
 
     let buff = extracted_buff.unwrap();
     assert_eq!(buff.buff_type, "Speed");
@@ -99,7 +99,7 @@ fn test_remove_additional() {
 
     // additionalを削除
     let removed = world.remove_additional::<PlayerBuff>(&player_id);
-    assert!(removed.is_some());
+    assert!(removed.is_ok());
 
     let buff = removed.unwrap();
     assert_eq!(buff.buff_type, "Defense");

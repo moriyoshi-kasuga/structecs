@@ -35,7 +35,7 @@ fn test_single_entity() {
     assert_eq!(player.score, 100);
 
     let removed = world.remove_entity(&id);
-    assert!(removed);
+    assert!(removed.is_ok());
     assert_eq!(world.query::<Player>().len(), 0);
 }
 
@@ -69,7 +69,7 @@ fn test_multiple_same_type_entities() {
 
     // 1つ削除
     let removed = world.remove_entity(&id2);
-    assert!(removed);
+    assert!(removed.is_ok());
     assert_eq!(world.query::<Player>().len(), 2);
 
     // 残りのエンティティを確認
@@ -135,11 +135,11 @@ fn test_remove_twice() {
 
     // 最初の削除は成功
     let first_remove = world.remove_entity(&id);
-    assert!(first_remove);
+    assert!(first_remove.is_ok());
 
     // 2回目の削除は失敗（既に削除済み）
     let second_remove = world.remove_entity(&id);
-    assert!(!second_remove);
+    assert!(second_remove.is_err());
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn test_query_after_all_removed() {
 
     // 全て削除
     for id in ids {
-        world.remove_entity(&id);
+        let _ = world.remove_entity(&id);
     }
 
     assert_eq!(world.query::<Player>().len(), 0);
@@ -181,7 +181,7 @@ fn test_interleaved_insert_remove() {
         // 2つごとに古いものを削除
         if active_ids.len() > 2 {
             let old_id = active_ids.remove(0);
-            world.remove_entity(&old_id);
+            let _ = world.remove_entity(&old_id);
         }
     }
 
@@ -276,13 +276,13 @@ fn test_different_types_same_world() {
     assert_eq!(world.query::<Enemy>().len(), 1);
 
     // 片方を削除
-    world.remove_entity(&player_id);
+    let _ = world.remove_entity(&player_id);
 
     // もう片方は残っているはず
     assert_eq!(world.query::<Player>().len(), 0);
     assert_eq!(world.query::<Enemy>().len(), 1);
 
-    world.remove_entity(&enemy_id);
+    let _ = world.remove_entity(&enemy_id);
     assert_eq!(world.query::<Enemy>().len(), 0);
 }
 
@@ -297,7 +297,7 @@ fn test_rapid_add_remove_cycle() {
         });
 
         if iteration % 2 == 0 {
-            world.remove_entity(&id);
+            let _ = world.remove_entity(&id);
         }
     }
 
@@ -324,7 +324,7 @@ fn test_many_entities_same_type() {
 
     // 半分を削除
     for i in (0..count).step_by(2) {
-        world.remove_entity(&ids[i as usize]);
+        let _ = world.remove_entity(&ids[i as usize]);
     }
 
     assert_eq!(world.query::<Player>().len(), (count / 2) as usize);
@@ -368,10 +368,10 @@ fn test_entity_count_tracking() {
     let id2 = world.add_entity(Enemy { health: 50 });
     assert_eq!(world.entity_count(), 2);
 
-    world.remove_entity(&id1);
+    let _ = world.remove_entity(&id1);
     assert_eq!(world.entity_count(), 1);
 
-    world.remove_entity(&id2);
+    let _ = world.remove_entity(&id2);
     assert_eq!(world.entity_count(), 0);
 }
 

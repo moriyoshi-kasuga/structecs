@@ -47,7 +47,7 @@ fn test_add_single_entity() {
 
     // Verify the entity can be queried
     let component = world.extract_component::<SimpleEntity>(&id);
-    assert!(component.is_some());
+    assert!(component.is_ok());
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn test_remove_entity() {
     assert_eq!(world.entity_count(), 1);
 
     let removed = world.remove_entity(&id);
-    assert!(removed);
+    assert!(removed.is_ok());
     assert_eq!(world.entity_count(), 0);
 }
 
@@ -122,7 +122,7 @@ fn test_remove_nonexistent_entity() {
 
     // Second removal should fail
     let removed = world.remove_entity(&id);
-    assert!(!removed);
+    assert!(removed.is_err());
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn test_extract_component() {
     });
 
     let player = world.extract_component::<Player>(&id);
-    assert!(player.is_some());
+    assert!(player.is_ok());
 
     let player = player.unwrap();
     assert_eq!(player.name, "Alice");
@@ -180,7 +180,7 @@ fn test_extract_component_nonexistent() {
     world.remove_entity(&id);
 
     let player = world.extract_component::<Player>(&id);
-    assert!(player.is_none());
+    assert!(player.is_err());
 }
 
 #[test]
@@ -325,12 +325,12 @@ fn test_entity_data_extraction() {
 
     // Extract nested component
     let entity = world.extract_component::<TestEntity>(&id);
-    assert!(entity.is_some());
+    assert!(entity.is_ok());
     assert_eq!(entity.unwrap().name, "Hero");
 
     // Extract full component
     let player = world.extract_component::<TestPlayer>(&id);
-    assert!(player.is_some());
+    assert!(player.is_ok());
     assert_eq!(player.unwrap().health, 100);
 }
 

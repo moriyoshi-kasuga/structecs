@@ -73,7 +73,7 @@ fn main() {
 
     // Add buffs to some players
     println!("2. Applying buffs...");
-    world.add_additional(
+    let _ = world.add_additional(
         &warrior_id,
         Buff {
             name: "Strength".to_string(),
@@ -82,7 +82,7 @@ fn main() {
         },
     );
 
-    world.add_additional(
+    let _ = world.add_additional(
         &mage_id,
         Buff {
             name: "Intelligence".to_string(),
@@ -96,7 +96,7 @@ fn main() {
 
     // Apply poison to rogue
     println!("3. Applying poison...");
-    world.add_additional(
+    let _ = world.add_additional(
         &rogue_id,
         Poisoned {
             damage_per_tick: 5,
@@ -107,7 +107,7 @@ fn main() {
 
     // Add quest progress to warrior
     println!("4. Adding quest progress...");
-    world.add_additional(
+    let _ = world.add_additional(
         &warrior_id,
         QuestProgress {
             quest_id: "main_quest_001".to_string(),
@@ -146,7 +146,7 @@ fn main() {
     // Check specific additional
     println!("6. Checking quest progress...");
     if world.has_additional::<QuestProgress>(&warrior_id)
-        && let Some(quest) = world.extract_additional::<QuestProgress>(&warrior_id)
+        && let Some(quest) = world.extract_additional::<QuestProgress>(&warrior_id).ok()
     {
         println!(
             "   Warrior's quest '{}': {}/{} objectives completed",
@@ -157,7 +157,7 @@ fn main() {
 
     // Replace buff with stronger one
     println!("7. Replacing warrior's buff with stronger one...");
-    world.add_additional(
+    let _ = world.add_additional(
         &warrior_id,
         Buff {
             name: "Super Strength".to_string(),
@@ -166,7 +166,7 @@ fn main() {
         },
     );
 
-    if let Some(buff) = world.extract_additional::<Buff>(&warrior_id) {
+    if let Some(buff) = world.extract_additional::<Buff>(&warrior_id).ok() {
         println!(
             "   Warrior now has: {} (+{} for {}s)",
             buff.name, buff.power, buff.duration_seconds
@@ -176,7 +176,7 @@ fn main() {
 
     // Remove poison
     println!("8. Curing rogue's poison...");
-    if let Some(poison) = world.remove_additional::<Poisoned>(&rogue_id) {
+    if let Some(poison) = world.remove_additional::<Poisoned>(&rogue_id).ok() {
         println!(
             "   Removed poison: {} damage/tick with {} ticks remaining",
             poison.damage_per_tick, poison.ticks_remaining
