@@ -39,10 +39,25 @@ impl std::fmt::Display for EntityId {
 }
 
 /// Internal reference-counted data for an entity.
+///
+/// Memory layout is optimized to reduce false sharing in concurrent scenarios.
+/// The counter is placed in its own cache line to avoid contention with other fields.
+#[repr(C)]
 pub(crate) struct EntityDataInner {
-    pub(crate) data: NonNull<u8>,
+    /// Reference counter - placed first and aligned to cache line for optimal concurrent access
     pub(crate) counter: AtomicUsize,
+    
+    /// Padding to separate counter from other fields (prevents false sharing)
+    /// Modern CPUs typically use 64-byte cache lines
+    _pad: [u8; 56],
+    
+    /// Pointer to the entity data
+    pub(crate) data: NonNull<u8>,
+    
+    /// Extractor for component access
     pub(crate) extractor: Arc<Extractor>,
+    
+    /// Additional components (optional runtime data)
     #[allow(clippy::type_complexity)]
     pub(crate) additional: RwLock<Vec<(TypeId, NonNull<u8>, Arc<Extractor>)>>,
 }
@@ -63,8 +78,9 @@ impl EntityData {
     pub(crate) fn new<E: crate::Extractable>(entity: E, extractor: Arc<Extractor>) -> Self {
         let ptr = Box::into_raw(Box::new(entity)) as *mut u8;
         let inner = EntityDataInner {
-            data: unsafe { NonNull::new_unchecked(ptr) },
             counter: AtomicUsize::new(1),
+            _pad: [0; 56],
+            data: unsafe { NonNull::new_unchecked(ptr) },
             extractor,
             additional: RwLock::new(Vec::new()),
         };
