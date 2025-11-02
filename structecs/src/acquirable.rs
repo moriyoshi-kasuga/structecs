@@ -38,6 +38,11 @@ impl<T: 'static> Acquirable<T> {
         Self { target, inner }
     }
 
+    #[inline]
+    pub unsafe fn new_target(inner: EntityData) -> Self {
+        Acquirable::new(inner.data_ptr().cast::<T>(), inner)
+    }
+
     /// Extract a different component type from the same entity.
     pub fn extract<U: 'static>(&self) -> Option<Acquirable<U>> {
         let extracted = unsafe { self.inner.extract_ptr::<U>()? };

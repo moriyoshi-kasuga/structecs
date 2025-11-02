@@ -98,6 +98,10 @@ impl EntityData {
         crate::Acquirable::new(extracted, self.clone())
     }
 
+    pub (crate) fn data_ptr(&self) -> NonNull<u8> {
+        self.inner().data
+    }
+
     pub(crate) fn extract<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
         let extracted = unsafe { self.extract_ptr::<T>()? };
         Some(crate::Acquirable::new(extracted, self.clone()))

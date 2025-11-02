@@ -108,10 +108,26 @@ impl World {
 
         archetype.add_entity(entity_id, entity);
 
-        // Update the entity index (lock-free)
         self.entity_index.insert(entity_id, archetype_id);
 
         entity_id
+    }
+
+    pub fn add_entity_with_acquirable<E: Extractable>(
+        &self,
+        entity: E,
+    ) -> (EntityId, Acquirable<E>) {
+        let entity_id = EntityId::new(self.next_entity_id.fetch_add(1, Ordering::Relaxed));
+
+        let archetype_id = ArchetypeId::of::<E>();
+        let archetype = self.get_archetype::<E>();
+
+        let data = archetype.add_entity(entity_id, entity);
+        let acquirable = unsafe { Acquirable::new_target(data) };
+
+        self.entity_index.insert(entity_id, archetype_id);
+
+        (entity_id, acquirable)
     }
 
     /// Add multiple entities to the world in batch.
