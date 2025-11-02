@@ -282,6 +282,7 @@ pub struct World {
     archetypes: DashMap<ArchetypeId, Arc<RwLock<Archetype>>>,
     extractors: DashMap<TypeId, Arc<Extractor>>,
     entity_index: DashMap<EntityId, ArchetypeId>,
+    type_index: DashMap<TypeId, Vec<ArchetypeId>>,  // 型からアーキタイプを高速検索
     next_entity_id: AtomicU32,
 }
 ```
@@ -291,6 +292,7 @@ pub struct World {
 1. **DashMap**: 並行HashMap（ロックフリー読み取り）
 2. **Arc<RwLock<Archetype>>**: アーキタイプごとの細粒度ロック
 3. **AtomicU32**: ロックフリーなID生成
+4. **Type Index**: クエリ最適化のための逆引きマップ
 
 **主要API:**
 
@@ -309,6 +311,76 @@ impl World {
 ```
 
 **重要:** すべてのメソッドが`&self`（共有参照）で動作。
+
+### 7. Type Index: クエリ最適化
+
+**Type Index**は、特定の型を持つアーキタイプを高速に検索するための逆引きマップです。
+
+```rust
+type_index: DashMap<TypeId, Vec<ArchetypeId>>
+```
+
+**動作原理:**
+
+```rust
+// エンティティ追加時に更新
+world.add_entity(Player { ... });
+  ↓
+// Playerが持つすべての型に対してインデックス更新
+type_index.entry(TypeId::of::<Player>()).or_default().push(archetype_id);
+type_index.entry(TypeId::of::<Entity>()).or_default().push(archetype_id);
+type_index.entry(TypeId::of::<String>()).or_default().push(archetype_id);
+// ... (Playerが持つすべての抽出可能な型)
+
+// クエリ実行時に活用
+world.query::<Health>();
+  ↓
+// 最適化前: すべてのアーキタイプをイテレート（O(N)）
+for archetype in all_archetypes {
+    if archetype.has_component::<Health>() { ... }
+}
+
+// 最適化後: Type Indexで直接取得（O(1)）
+let archetype_ids = type_index.get(&TypeId::of::<Health>())?;
+for archetype_id in archetype_ids {
+    let archetype = archetypes.get(archetype_id)?;
+    // ...
+}
+```
+
+**パフォーマンス向上:**
+
+- アーキタイプ数が多い場合（100+）に特に効果的
+- クエリ時間を O(N) → O(M) に削減（N = 全アーキタイプ数、M = 該当アーキタイプ数）
+- メモリオーバーヘッドは最小限（各型につき小さなVec）
+
+**実装例:**
+
+```rust
+impl World {
+    pub fn query<T: 'static>(&self) -> impl Iterator<Item = (EntityId, Acquirable<T>)> {
+        let type_id = TypeId::of::<T>();
+        
+        // Type Indexから該当アーキタイプのみを取得
+        let archetype_ids = match self.type_index.get(&type_id) {
+            Some(ids) => ids.clone(),
+            None => return vec![].into_iter().flatten(),  // 該当なし
+        };
+        
+        // 該当アーキタイプのみイテレート
+        archetype_ids
+            .into_iter()
+            .filter_map(|arch_id| self.archetypes.get(&arch_id))
+            .map(|archetype| {
+                let arch = archetype.read().unwrap();
+                arch.iter_component::<T>()
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flatten()
+    }
+}
+```
 
 ---
 

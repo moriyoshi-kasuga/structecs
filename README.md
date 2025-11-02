@@ -394,6 +394,47 @@ This gives you:
 - **Performance** of data-oriented design (offset-based access, no virtual dispatch)
 - **Flexibility** of procedural code (write systems however you want)
 
+### Mutability Design
+
+structecs provides **read-only access** by default. Users control mutability explicitly using Rust's interior mutability patterns:
+
+```rust
+use std::sync::{Mutex, RwLock};
+use std::sync::atomic::AtomicU32;
+
+// Pattern 1: Lock-free with Atomics
+#[derive(Extractable)]
+pub struct Player {
+    pub name: String,
+    pub health: AtomicU32,  // Lock-free concurrent updates
+}
+
+// Pattern 2: Fine-grained locking with Mutex
+#[derive(Extractable)]
+pub struct Inventory {
+    pub items: Mutex<Vec<Item>>,  // Lock only when accessing items
+}
+
+// Pattern 3: Read/write separation with RwLock
+#[derive(Extractable)]
+pub struct Position {
+    pub coords: RwLock<Vec3>,  // Multiple readers, single writer
+}
+
+// Usage
+for (id, player) in world.query::<Player>() {
+    player.health.fetch_add(10, Ordering::Relaxed);
+}
+```
+
+**Why no `query_mut()`?**
+
+- **Prevents lock contention**: Locking the entire World would block all operations
+- **Fine-grained control**: Users choose the optimal locking strategy per component
+- **Multi-threading first**: Essential for high-concurrency scenarios like game servers
+
+This design philosophy prioritizes flexibility and performance in concurrent environments.
+
 ---
 
 ## Performance
@@ -458,6 +499,7 @@ cargo test --test edge_cases_test
 - [x] Archetype-based storage for better cache locality
 - [x] Iterator-based queries (eliminate Vec allocation)
 - [x] Extractor caching for zero-cost component access
+- [x] Type index for fast archetype lookup
 - [x] Modular codebase structure
 
 ### Phase 2: Multi-threading ✅ (Completed)
@@ -475,8 +517,8 @@ cargo test --test edge_cases_test
 ### Phase 4: Features (In Progress)
 
 - [x] Additional components (optional runtime data)
-- [ ] Query filtering and composition
-- [ ] Advanced query builders
+- [ ] Query filtering and composition (planned)
+- [ ] Error handling improvements (planned)
 
 ---
 
