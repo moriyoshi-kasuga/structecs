@@ -10,6 +10,15 @@ pub struct Acquirable<T: 'static> {
     pub(crate) inner: EntityData,
 }
 
+impl<T: 'static> Clone for Acquirable<T> {
+    fn clone(&self) -> Self {
+        Self {
+            target: self.target,
+            inner: self.inner.clone(),
+        }
+    }
+}
+
 impl<T: 'static> AsRef<T> for Acquirable<T> {
     fn as_ref(&self) -> &T {
         unsafe { self.target.as_ref() }
