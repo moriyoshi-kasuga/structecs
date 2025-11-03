@@ -61,6 +61,7 @@ mod entity;
 mod error;
 mod extractable;
 mod extractor;
+mod handler;
 mod world;
 
 // Public exports
@@ -68,4 +69,5 @@ pub use acquirable::Acquirable;
 pub use entity::EntityId;
 pub use error::WorldError;
 pub use extractable::{Extractable, ExtractionMetadata};
+pub use handler::ComponentHandler;
 pub use world::World;
