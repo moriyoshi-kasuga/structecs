@@ -89,8 +89,12 @@ impl World {
     }
 
     fn get_entity_data(&self, entity_id: &EntityId) -> Option<crate::entity::EntityData> {
-        let archetype = self.get_archetype_by_entity(entity_id)?;
-        archetype.entities.get(entity_id).map(|d| d.clone())
+        let archetype_id = *self.entity_index.get(entity_id)?.value();
+        self.archetypes
+            .get(&archetype_id)?
+            .entities
+            .get(entity_id)
+            .map(|d| d.clone())
     }
 
     /// Add an entity to the world.
