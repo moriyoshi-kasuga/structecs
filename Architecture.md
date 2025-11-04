@@ -159,7 +159,7 @@ pub struct Position {
 ```rust
 // 好きなように書ける
 fn update_physics(world: &World, delta: f32) {
-    for (id, pos) in world.query::<RwLock<Vec3>>() {
+    for (id, pos) in world.query::<Position>() {
         let vel = world.extract_component::<Vec3>(&id).unwrap();
         let mut pos = pos.write().unwrap();
         pos.x += vel.x * delta;
@@ -278,10 +278,9 @@ impl<T> Deref for Acquirable<T> {
 
 ```rust
 pub struct World {
-    archetypes: DashMap<ArchetypeId, Arc<RwLock<Archetype>>>,
-    extractors: DashMap<TypeId, Arc<Extractor>>,
+    archetypes: DashMap<ArchetypeId, Arc<Archetype>>,
     entity_index: DashMap<EntityId, ArchetypeId>,
-    type_index: DashMap<TypeId, Vec<ArchetypeId>>,  // 型からアーキタイプを高速検索
+    type_index: DashMap<TypeId, FxHashSet<ArchetypeId>>,  // 型からアーキタイプを高速検索
     next_entity_id: AtomicU32,
 }
 ```
@@ -289,7 +288,7 @@ pub struct World {
 **設計の核心:**
 
 1. **DashMap**: 並行HashMap（ロックフリー読み取り）
-2. **Arc<RwLock<Archetype>>**: アーキタイプごとの細粒度ロック
+2. **Archetype内部にDashMap**: アーキタイプはスレッド安全な並行マップで管理
 3. **AtomicU32**: ロックフリーなID生成
 4. **Type Index**: クエリ最適化のための逆引きマップ
 
@@ -298,14 +297,14 @@ pub struct World {
 ```rust
 impl World {
     pub fn add_entity<E: Extractable>(&self, entity: E) -> EntityId;
-    pub fn remove_entity(&self, entity_id: &EntityId) -> bool;
-    pub fn remove_entities(&self, entity_ids: &[EntityId]) -> usize;
+    pub fn remove_entity(&self, entity_id: &EntityId) -> Result<(), WorldError>;
+    pub fn remove_entities(&self, entity_ids: &[EntityId]);
     pub fn contains_entity(&self, entity_id: &EntityId) -> bool;
     pub fn clear(&self);
     pub fn extract_component<T: 'static>(&self, entity_id: &EntityId) 
-        -> Option<Acquirable<T>>;
+        -> Result<Acquirable<T>, WorldError>;
     pub fn query<T: 'static>(&self) 
-        -> impl Iterator<Item = (EntityId, Acquirable<T>)>;
+        -> Vec<(EntityId, Acquirable<T>)>;
 }
 ```
 
@@ -316,7 +315,7 @@ impl World {
 **Type Index**は、特定の型を持つアーキタイプを高速に検索するための逆引きマップです。
 
 ```rust
-type_index: DashMap<TypeId, Vec<ArchetypeId>>
+type_index: DashMap<TypeId, FxHashSet<ArchetypeId>>
 ```
 
 **動作原理:**
@@ -334,16 +333,12 @@ type_index.entry(TypeId::of::<String>()).or_default().push(archetype_id);
 // クエリ実行時に活用
 world.query::<Health>();
   ↓
-// 最適化前: すべてのアーキタイプをイテレート（O(N)）
-for archetype in all_archetypes {
-    if archetype.has_component::<Health>() { ... }
-}
-
-// 最適化後: Type Indexで直接取得（O(1)）
-let archetype_ids = type_index.get(&TypeId::of::<Health>())?;
-for archetype_id in archetype_ids {
-    let archetype = archetypes.get(archetype_id)?;
-    // ...
+// Type Indexで直接該当アーキタイプ集合を取得
+let archetype_ids: FxHashSet<ArchetypeId> = type_index.get(&TypeId::of::<Health>()).cloned().unwrap_or_default();
+for archetype_id in &archetype_ids {
+    if let Some(archetype) = archetypes.get(archetype_id) {
+        // ...
+    }
 }
 ```
 
@@ -357,26 +352,22 @@ for archetype_id in archetype_ids {
 
 ```rust
 impl World {
-    pub fn query<T: 'static>(&self) -> impl Iterator<Item = (EntityId, Acquirable<T>)> {
+    pub fn query<T: 'static>(&self) -> Vec<(EntityId, Acquirable<T>)> {
         let type_id = TypeId::of::<T>();
         
         // Type Indexから該当アーキタイプのみを取得
-        let archetype_ids = match self.type_index.get(&type_id) {
-            Some(ids) => ids.clone(),
-            None => return vec![].into_iter().flatten(),  // 該当なし
-        };
+        let archetype_ids: FxHashSet<ArchetypeId> = self.type_index.get(&type_id).map(|ids| ids.clone()).unwrap_or_default();
         
-        // 該当アーキタイプのみイテレート
-        archetype_ids
-            .into_iter()
-            .filter_map(|arch_id| self.archetypes.get(&arch_id))
-            .map(|archetype| {
-                let arch = archetype.read().unwrap();
-                arch.iter_component::<T>()
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
-            .flatten()
+        // 集計用ベクタにスナップショット収集
+        let mut results = Vec::new();
+        
+        for arch_id in archetype_ids {
+            if let Some(archetype) = self.archetypes.get(&arch_id) {
+                // 安全: Type Indexにより T を含むアーキタイプのみ
+                results.extend(unsafe { archetype.iter_component_unchecked::<T>() });
+            }
+        }
+        results
     }
 }
 ```
@@ -408,7 +399,7 @@ World::add_entity():
 **並行性:**
 
 - 異なるアーキタイプへの追加 → 完全並列
-- 同じアーキタイプへの追加 → RwLockで直列化（必要最小限）
+- 同じアーキタイプへの追加 → Archetype内部の並行マップで短時間の排他制御
 
 ### 2. クエリ実行フロー
 
@@ -417,14 +408,9 @@ World::add_entity():
   world.query::<Health>()
            ↓
 World::query():
-  1. すべてのArchetypeをイテレート（DashMap::iter）
-  2. 各Archetypeを短時間read lock
-  3. has_component::<Health>()でフィルタ
-  4. マッチしたら iter_component()でスナップショット取得
-  5. read lock解放（重要！）
-  6. スナップショットをVecに収集
-           ↓
-  7. Vec<Vec<...>> をflattenしてイテレータ返却
+  1. Type Indexから該当Archetype集合を取得
+  2. 各Archetypeから iter_component_unchecked() でスナップショット収集
+  3. Vecに収集して返却（イテレータではない）
            ↓
 ユーザーコード:
   for (id, health) in iter {
@@ -481,7 +467,7 @@ Level 2: DashMap（archetypes, extractors, entity_index）
   → 内部シャーディング、ロックフリー読み取り
 
 Level 3: Archetype
-  → RwLock（読み取り並列、書き込み排他）
+  → 内部はDashMap（並列対応、短時間アクセス）
 
 Level 4: コンポーネント内部
   → ユーザー制御（Atomic, Mutex, RwLock）
@@ -513,7 +499,7 @@ for (id, player) in world.query::<Player>() {
 }
 ```
 
-**ロック競合:** なし（RwLockの読み取りは複数スレッド同時可能）
+**ロック競合:** なし（スナップショットは短時間の内部ロック/なし）
 
 #### パターン3: 同一アーキタイプへの書き込み（直列化）
 

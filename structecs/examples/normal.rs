@@ -52,8 +52,8 @@ fn main() {
     println!("Total entities: {}", world.entity_count());
     println!("Total archetypes: {}", world.archetype_count());
 
-    println!("\n=== Query All Entities (Iterator) ===");
-    // Using iterator-based query (efficient, no allocation until snapshot)
+println!("\n=== Query All Entities ===");
+// Using type-indexed snapshot query (short-lived locks)
     for (id, entity) in world.query::<Entity>() {
         println!("[{}] Entity: {:?}", id, *entity);
     }

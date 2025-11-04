@@ -18,10 +18,9 @@ This crate is currently under active development. The API is not stable and may 
 **Recent Updates:**
 
 - ✅ Archetype-based storage implemented
-- ✅ Iterator-based queries (zero-allocation)
-- ✅ Parallel query support with Rayon
-- ✅ Comprehensive test suite (tests covering integration, concurrency, memory safety, edge cases)
-- ✅ Thread-safe operations with fine-grained locking
+- ✅ Snapshot-based queries with type index
+- ✅ Thread-safe operations using DashMap
+- ✅ Comprehensive test suite (integration, concurrency, memory safety, edge cases)
 - 🔄 Query composition and filtering (planned)
 
 ---
@@ -36,7 +35,7 @@ Unlike conventional ECS frameworks (Bevy, specs, hecs), structecs:
 - ✅ **Hierarchical components** - Nest components naturally like OOP
 - ✅ **Dynamic type extraction** - Query for any component type on-the-fly
 - ✅ **Zero-cost abstractions** - Uses compile-time offsets for component access
-- ✅ **Thread-safe** - Concurrent operations with fine-grained locking
+- ✅ **Thread-safe** - Concurrent operations via lock-free maps + short locks
 
 ## Quick Start
 
@@ -70,7 +69,7 @@ fn main() {
 
     // Query all players
     for (id, player) in world.query::<Player>() {
-        println!("[{}] {}: {} HP", id.id(), player.entity.name, player.health);
+        println!("[{}] {}: {} HP", id, player.entity.name, player.health);
     }
 
     // Extract nested components
@@ -83,17 +82,10 @@ fn main() {
         }
     }
 
-    // Parallel queries for large datasets
-    use rayon::prelude::*;
-    world.par_query::<Player>()
-        .for_each(|(id, player)| {
-            // Process players in parallel
-        });
 
-    // Batch remove entities efficiently
+    // Batch remove entities efficiently (silent, no error tracking)
     let ids_to_remove = vec![player_id /* ... */];
-    let removed_count = world.remove_entities(&ids_to_remove);
-    println!("Removed {} entities", removed_count);
+    world.remove_entities(&ids_to_remove);
 
     // Check entity existence
     if world.contains_entity(&player_id) {
@@ -134,8 +126,6 @@ pub struct EntityId {
 }
 
 impl EntityId {
-    pub fn id(&self) -> u32;
-    pub fn as_usize(&self) -> usize;  // For array indexing
     pub fn from_raw(id: u32) -> Self;  // Create from raw u32
 }
 
@@ -184,12 +174,12 @@ let player_id = world.add_entity(Player {
 
 // Query entities
 for (id, player) in world.query::<Player>() {
-    println!("[{}] {}: {} HP", id.id(), player.entity.name, player.health);
+    println!("[{}] {}: {} HP", id, player.entity.name, player.health);
 }
 
 // Batch operations
 let ids = vec![id1, id2, id3];
-let count = world.remove_entities(&ids);  // Efficient batch removal
+world.remove_entities(&ids);  // Efficient batch removal (silent)
 
 // Check existence
 if world.contains_entity(&player_id) {
@@ -200,12 +190,13 @@ if world.contains_entity(&player_id) {
 **Core operations:**
 
 - `add_entity<E: Extractable>(entity: E) -> EntityId` - Register new entity
-- `remove_entity(entity_id: &EntityId) -> bool` - Remove single entity from world
-- `remove_entities(entity_ids: &[EntityId]) -> usize` - Batch remove entities, returns count of removed
+- `remove_entity(entity_id: &EntityId) -> Result<(), WorldError>` - Remove single entity from world
+- `try_remove_entities(entity_ids: &[EntityId]) -> Result<(), WorldError>` - Batch remove entities with error tracking
+- `remove_entities(entity_ids: &[EntityId]) -> ()` - Fast batch removal (silently skips not found)
 - `contains_entity(entity_id: &EntityId) -> bool` - Check if entity exists in world
 - `clear()` - Remove all entities from world
-- `query<T: 'static>() -> Vec(EntityId, Acquirable<T>)>` - Efficiently iterate entities with component T
-- `extract_component<T>(entity_id: &EntityId) -> Option<Acquirable<T>>` - Get specific component
+- `query<T: 'static>() -> Vec<(EntityId, Acquirable<T>)>` - Snapshot of entities with component T
+- `extract_component<T>(entity_id: &EntityId) -> Result<Acquirable<T>, WorldError>` - Get specific component
 
 ### 4. Acquirable
 
@@ -377,13 +368,13 @@ structecs is designed for high performance with real-world workloads:
 **Basic Operations:**
 
 - Adding 10,000 entities: ~16ms
-- Querying 10,000 entities (iterator): ~4ms
+- Querying 10,000 entities: ~4ms
 - Querying specific type (10,000): ~3.4ms
 
 **Key Optimizations:**
 
 1. **Archetype Storage**: Entities with the same type are stored contiguously
-2. **Iterator-based Queries**: Zero allocation, lazy evaluation
+2. **Type-indexed Snapshot Queries**: Avoid scanning unrelated archetypes; short-lived locks
 3. **Extractor Caching**: Each type gets one shared extractor
 4. **Compile-time Offsets**: Component access via direct pointer arithmetic
 
@@ -428,17 +419,18 @@ cargo test --test edge_cases_test
 ### Phase 1: Performance ✅ (Completed)
 
 - [x] Archetype-based storage for better cache locality
-- [x] Iterator-based queries (eliminate Vec allocation)
+- [x] Snapshot-based queries (Vec snapshot per call)
 - [x] Extractor caching for zero-cost component access
 - [x] Type index for fast archetype lookup
 - [x] Modular codebase structure
 
-### Phase 2: Multi-threading ✅ (Completed)
+### Phase 2: Multi-threading (Partially Completed)
 
-- [x] Parallel query execution with Rayon
-- [x] Thread-safe World operations with DashMap and RwLock
-- [x] Fine-grained locking per archetype
+- [ ] Parallel query execution with Rayon (planned)
+- [x] Thread-safe World operations with DashMap
+- [x] Fine-grained locking per archetype (short-lived)
 - [x] Comprehensive concurrency tests
+
 
 ### Phase 3: Quality & Testing ✅ (Completed)
 

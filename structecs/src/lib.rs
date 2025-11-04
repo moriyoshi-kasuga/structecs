@@ -16,20 +16,41 @@
 //!
 //! ```rust
 //! use structecs::*;
-//!
+//! 
 //! #[derive(Debug, Extractable)]
 //! pub struct Entity {
 //!     pub name: String,
 //! }
-//!
+//! 
 //! #[derive(Debug, Extractable)]
 //! #[extractable(entity)]
 //! pub struct Player {
 //!     pub entity: Entity,
 //!     pub health: u32,
 //! }
+//! 
+//! let world = World::default();
+//! 
+//! let player = Player {
+//!     entity: Entity {
+//!         name: "Hero".to_string(),
+//!     },
+//!     health: 100,
+//! };
+//! 
+//! let player_id = world.add_entity(player);
+//! 
+//! // Snapshot-based query via type index
+//! for (id, entity) in world.query::<Entity>() {
+//!     println!("Entity: {:?}", *entity);
+//! }
+//! 
+//! // Extract specific component (struct-level only)
+//! if let Ok(player) = world.extract_component::<Player>(&player_id) {
+//!     println!("Health: {}", player.health);
+//! }
 //!
-//! let mut world = World::default();
+//! let world = World::default();
 //!
 //! let player = Player {
 //!     entity: Entity {
@@ -40,14 +61,14 @@
 //!
 //! let player_id = world.add_entity(player);
 //!
-//! // Iterator-based query (efficient, no allocation)
+//! // Snapshot-based query via type index
 //! for (id, entity) in world.query::<Entity>() {
 //!     println!("Entity: {:?}", *entity);
 //! }
 //!
-//! // Extract specific component
-//! if let Ok(health) = world.extract_component::<u32>(&player_id) {
-//!     println!("Health: {}", *health);
+//! // Extract specific component (struct-level only)
+//! if let Ok(player) = world.extract_component::<Player>(&player_id) {
+//!     println!("Health: {}", player.health);
 //! }
 //! ```
 
