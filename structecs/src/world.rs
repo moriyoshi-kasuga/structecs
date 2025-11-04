@@ -8,7 +8,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use rustc_hash::{FxBuildHasher, FxHashMap};
+use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 
 use crate::{
     Acquirable, EntityId, Extractable, WorldError,
@@ -43,7 +43,7 @@ pub struct World {
 
     /// Type index: maps component TypeId to archetypes that contain it
     /// This cache dramatically speeds up queries when there are many archetypes
-    type_index: DashMap<TypeId, Vec<ArchetypeId>, FxBuildHasher>,
+    type_index: DashMap<TypeId, FxHashSet<ArchetypeId>, FxBuildHasher>,
 
     /// Next entity ID to assign (atomic for lock-free ID generation).
     next_entity_id: AtomicU32,
@@ -79,7 +79,7 @@ impl World {
             self.type_index
                 .entry(*type_id)
                 .or_default()
-                .push(archetype_id);
+                .insert(archetype_id);
         }
     }
 
@@ -678,7 +678,7 @@ impl World {
 
         // Use type index to get only relevant archetypes
         // Clone the archetype IDs to avoid holding the lock
-        let archetype_ids: Vec<ArchetypeId> = self
+        let archetype_ids: FxHashSet<ArchetypeId> = self
             .type_index
             .get(&type_id)
             .map(|ids| ids.clone())
