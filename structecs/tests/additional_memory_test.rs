@@ -161,14 +161,21 @@ fn test_remove_additional() {
     // Remove it
     let removed = comp.remove_additional::<DropTracked3>();
     assert!(removed.is_some());
-    assert_eq!(removed.unwrap().id, 1);
+    let removed_ref = removed.as_ref().unwrap();
+    assert_eq!(removed_ref.id, 1);
     
     // Should not be able to extract again
     let none = comp.extract_additional::<DropTracked3>();
     assert!(none.is_none());
     
-    // Should not be dropped yet
+    // Should not be dropped yet (still held by 'removed')
     assert_eq!(DROP_COUNTER3.load(Ordering::SeqCst), 0);
+    
+    // Drop the removed additional
+    drop(removed);
+    
+    // Now it should be dropped
+    assert_eq!(DROP_COUNTER3.load(Ordering::SeqCst), 1);
 }
 
 #[test]

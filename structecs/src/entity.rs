@@ -8,6 +8,7 @@ use std::{
 };
 
 use parking_lot::RwLock;
+use rustc_hash::FxHashMap;
 
 use crate::{Extractable, extractor::Extractor};
 
@@ -58,12 +59,8 @@ pub(crate) struct EntityDataInner {
     pub(crate) extractor: Arc<Extractor>,
 
     /// Additional components (optional runtime data)
-    #[allow(clippy::type_complexity)]
-    pub(crate) additional: RwLock<Vec<(TypeId, NonNull<u8>, Arc<Extractor>)>>,
-
-    /// Removed additional components that need cleanup when entity is fully dropped
-    #[allow(clippy::type_complexity)]
-    pub(crate) removed_additional: RwLock<Vec<(NonNull<u8>, Arc<Extractor>)>>,
+    /// Each additional component is stored as a separate EntityData with its own refcount
+    pub(crate) additional: RwLock<FxHashMap<TypeId, EntityData>>,
 }
 
 #[repr(transparent)]
@@ -93,8 +90,7 @@ impl EntityData {
             // SAFETY: Box::into_raw never returns null
             data: unsafe { NonNull::new_unchecked(ptr) },
             extractor,
-            additional: RwLock::new(Vec::new()),
-            removed_additional: RwLock::new(Vec::new()),
+            additional: RwLock::new(FxHashMap::default()),
         };
         Self {
             // SAFETY: Box::into_raw never returns null
@@ -130,66 +126,25 @@ impl EntityData {
     }
 
     pub(crate) fn add_additional<E: Extractable>(&self, data: E) {
-        let ptr = {
-            let boxed = Box::into_raw(Box::new(data)) as *mut u8;
-            // SAFETY: Box::into_raw never returns null
-            unsafe { NonNull::new_unchecked(boxed) }
-        };
-
-        let inner = self.inner();
+        let entity_data = EntityData::new(data, Arc::new(Extractor::new::<E>()));
         let type_id = TypeId::of::<E>();
-        let extractor = Arc::new(Extractor::new::<E>());
-
-        let mut additionals = inner.additional.write();
-
-        // Check if already exists and replace
-        if let Some(existing) = additionals.iter_mut().find(|(tid, _, _)| *tid == type_id) {
-            // Drop old data properly
-            // SAFETY: The dropper was created for this specific type when the data was added.
-            // The pointer is valid and points to properly aligned data of the correct type.
-            unsafe {
-                (existing.2.dropper)(existing.1);
-            }
-            existing.1 = ptr;
-            existing.2 = extractor;
-        } else {
-            additionals.push((type_id, ptr, extractor));
-        }
+        self.inner().additional.write().insert(type_id, entity_data);
     }
 
     pub(crate) fn extract_additional<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
-        let inner = self.inner();
-        let additionals = inner.additional.read();
-
-        let type_id = TypeId::of::<T>();
-        let ptr = additionals
-            .iter()
-            .find(|(tid, _, _)| *tid == type_id)?
-            .1
-            .cast::<T>();
-
-        Some(crate::Acquirable::new(ptr, self.clone()))
+        let additionals = self.inner().additional.read();
+        let entity_data = additionals.get(&TypeId::of::<T>())?.clone();
+        Some(crate::Acquirable::new(entity_data.data_ptr().cast::<T>(), entity_data))
     }
 
     pub(crate) fn has_additional<T: 'static>(&self) -> bool {
-        let inner = self.inner();
-        let additionals = inner.additional.read();
-        let type_id = TypeId::of::<T>();
-        additionals.iter().any(|(tid, _, _)| *tid == type_id)
+        self.inner().additional.read().contains_key(&TypeId::of::<T>())
     }
 
     pub(crate) fn remove_additional<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
-        let inner = self.inner();
-        let mut additionals = inner.additional.write();
-
-        let type_id = TypeId::of::<T>();
-        let pos = additionals.iter().position(|(tid, _, _)| *tid == type_id)?;
-        let (_, ptr, extractor) = additionals.swap_remove(pos);
-
-        // Store the removed additional for cleanup when EntityData is dropped
-        inner.removed_additional.write().push((ptr, extractor));
-
-        Some(crate::Acquirable::new(ptr.cast::<T>(), self.clone()))
+        let mut additionals = self.inner().additional.write();
+        let entity_data = additionals.remove(&TypeId::of::<T>())?;
+        Some(crate::Acquirable::new(entity_data.data_ptr().cast::<T>(), entity_data))
     }
 }
 
@@ -208,24 +163,9 @@ impl Drop for EntityData {
         unsafe { (inner.extractor.dropper)(inner.data) };
 
         // Drop all additional data
-        let additionals = inner.additional.read();
-        for (_, ptr, extractor) in additionals.iter() {
-            // SAFETY: Each dropper corresponds to its data type, and the pointer is valid.
-            // The data was allocated when the additional component was added.
-            unsafe {
-                (extractor.dropper)(*ptr);
-            }
-        }
-
-        // Drop all removed additional data
-        let removed_additionals = inner.removed_additional.read();
-        for (ptr, extractor) in removed_additionals.iter() {
-            // SAFETY: Each dropper corresponds to its data type, and the pointer is valid.
-            // The data was allocated when the additional component was added.
-            unsafe {
-                (extractor.dropper)(*ptr);
-            }
-        }
+        // The HashMap will automatically drop all EntityData values, which will trigger
+        // their Drop implementations and clean up the additional component data.
+        drop(inner.additional.write());
 
         // SAFETY: We are the last reference (counter reached 0), so we can safely
         // deallocate the inner data. The inner pointer is valid and was allocated via Box.
