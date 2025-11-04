@@ -53,7 +53,11 @@ impl<Args, Return> TypeErasedFn<Args, Return> {
     }
 }
 
+// SAFETY: TypeErasedFn only contains a Box<dyn Fn> which is Send,
+// and the function itself is bounded by Send + Sync traits.
 unsafe impl<Args, Return> Send for TypeErasedFn<Args, Return> {}
+// SAFETY: TypeErasedFn only contains a Box<dyn Fn> which is Sync,
+// and the function itself is bounded by Send + Sync traits.
 unsafe impl<Args, Return> Sync for TypeErasedFn<Args, Return> {}
 
 /// A component handler that enables polymorphic behavior on entity hierarchies.

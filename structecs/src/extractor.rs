@@ -17,8 +17,12 @@ impl Extractor {
             offsets: ExtractionMetadata::flatten(E::METADATA_LIST)
                 .into_iter()
                 .collect(),
-            dropper: |ptr| unsafe {
-                drop(Box::from_raw(ptr.as_ptr() as *mut E));
+            dropper: |ptr| {
+                // SAFETY: The pointer was created from Box::into_raw with type E,
+                // so it's safe to reconstruct and drop the Box<E>.
+                unsafe {
+                    drop(Box::from_raw(ptr.as_ptr() as *mut E));
+                }
             },
         }
     }
@@ -30,6 +34,8 @@ impl Extractor {
     pub(crate) unsafe fn extract_ptr<T: 'static>(&self, data: NonNull<u8>) -> Option<NonNull<T>> {
         let type_id = TypeId::of::<T>();
         let offset = self.offsets.get(&type_id)?;
+        // SAFETY: The offset is valid for type T and was computed during type analysis.
+        // The data pointer points to the base of the entity data.
         Some(unsafe { data.add(*offset).cast::<T>() })
     }
 

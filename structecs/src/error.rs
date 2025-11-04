@@ -20,7 +20,19 @@ pub enum WorldError {
         component_name: &'static str,
     },
 
+    /// Batch removal completed with some failures.
+    /// Contains the list of successfully removed entities and failed entities.
+    PartialRemoval {
+        succeeded: Vec<EntityId>,
+        failed: Vec<EntityId>,
+    },
+
     /// The archetype for the entity was not found (internal consistency error).
+    /// 
+    /// This error indicates an internal inconsistency in the World state
+    /// and should not normally occur. If you encounter this error, please
+    /// file a bug report.
+    #[doc(hidden)]
     ArchetypeNotFound(EntityId),
 }
 
@@ -48,6 +60,14 @@ impl fmt::Display for WorldError {
                     f,
                     "Additional component '{}' not found on entity {}",
                     component_name, entity_id
+                )
+            }
+            WorldError::PartialRemoval { succeeded, failed } => {
+                write!(
+                    f,
+                    "Batch removal partially succeeded: {} removed, {} failed",
+                    succeeded.len(),
+                    failed.len()
                 )
             }
             WorldError::ArchetypeNotFound(id) => {

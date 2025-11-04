@@ -123,6 +123,8 @@ impl World {
         let archetype = self.get_archetype::<E>();
 
         let data = archetype.add_entity(entity_id, entity);
+        // SAFETY: The data contains type E, which matches the Acquirable<E> type we're creating.
+        // This is guaranteed by the archetype.add_entity call above.
         let acquirable = unsafe { Acquirable::new_target(data) };
 
         self.entity_index.insert(entity_id, archetype_id);
@@ -322,8 +324,9 @@ impl World {
 
     /// Remove multiple entities from the world in batch.
     ///
-    /// Returns a vector of EntityIds that were successfully removed.
-    /// Entities that don't exist are silently skipped.
+    /// Returns `Ok(())` if all entities were removed successfully.
+    /// Returns `Err(WorldError::PartialRemoval)` if some entities failed to remove.
+    /// Non-existent entities are treated as failures.
     ///
     /// This method is optimized for bulk deletion by:
     /// - Grouping entities by archetype to minimize archetype lookups
@@ -339,17 +342,27 @@ impl World {
     ///
     /// This method is thread-safe and can be called concurrently from multiple threads.
     ///
+    /// # Errors
+    ///
+    /// Returns `WorldError::PartialRemoval` with information about which entities
+    /// were successfully removed and which failed.
+    ///
     /// # Example
     ///
     /// ```ignore
     /// let ids = vec![id1, id2, id3];
-    /// let removed = world.remove_entities(&ids);
-    /// println!("Removed {} entities", removed.len());
+    /// match world.remove_entities(&ids) {
+    ///     Ok(()) => println!("All entities removed"),
+    ///     Err(WorldError::PartialRemoval { succeeded, failed }) => {
+    ///         println!("Removed {} entities, {} failed", succeeded.len(), failed.len());
+    ///     }
+    ///     _ => {}
+    /// }
     /// ```
-    #[must_use]
-    pub fn remove_entities(&self, entity_ids: &[EntityId]) -> Vec<EntityId> {
+    pub fn remove_entities(&self, entity_ids: &[EntityId]) -> Result<(), WorldError> {
         // Group entity IDs by archetype
         let mut archetype_groups: FxHashMap<ArchetypeId, Vec<EntityId>> = FxHashMap::default();
+        let mut not_found = Vec::new();
 
         for entity_id in entity_ids {
             if let Some((_, archetype_id)) = self.entity_index.remove(entity_id) {
@@ -357,22 +370,37 @@ impl World {
                     .entry(archetype_id)
                     .or_default()
                     .push(*entity_id);
+            } else {
+                not_found.push(*entity_id);
             }
         }
 
         // Remove entities from each archetype
         let mut removed = Vec::new();
+        let mut failed = not_found;
+        
         for (archetype_id, entities) in archetype_groups {
             if let Some(archetype) = self.archetypes.get(&archetype_id) {
                 for entity_id in entities {
                     if archetype.remove_entity(&entity_id).is_some() {
                         removed.push(entity_id);
+                    } else {
+                        failed.push(entity_id);
                     }
                 }
+            } else {
+                failed.extend(entities);
             }
         }
 
-        removed
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(WorldError::PartialRemoval {
+                succeeded: removed,
+                failed,
+            })
+        }
     }
 
     /// Query all entities with component T.
@@ -431,7 +459,9 @@ impl World {
 
         // Collect from all matching archetypes
         for archetype in matching {
-            // Safety: We know the archetype contains T from the type index
+            // SAFETY: The type index guarantees that this archetype contains type T.
+            // Only archetypes that were registered with type T during entity insertion
+            // are included in the type index for T.
             results.extend(unsafe { archetype.iter_component_unchecked::<T>() });
         }
 

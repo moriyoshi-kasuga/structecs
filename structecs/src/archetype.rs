@@ -33,9 +33,13 @@ impl Archetype {
     pub(crate) unsafe fn iter_component_unchecked<T: 'static>(
         &self,
     ) -> impl Iterator<Item = (EntityId, Acquirable<T>)> {
+        // SAFETY: The caller guarantees that this archetype contains type T
+        // (typically verified via type index before calling this method).
         let offset = unsafe { self.extractor.offset(&TypeId::of::<T>()).unwrap_unchecked() };
         self.entities.iter().map(move |v| {
             let (id, data) = v.pair();
+            // SAFETY: The offset is valid for type T in this archetype,
+            // and all entities in this archetype have the same structure.
             let component = unsafe { data.extract_by_offset::<T>(offset) };
             (*id, component)
         })
