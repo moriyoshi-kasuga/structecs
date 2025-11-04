@@ -60,6 +60,10 @@ pub(crate) struct EntityDataInner {
     /// Additional components (optional runtime data)
     #[allow(clippy::type_complexity)]
     pub(crate) additional: RwLock<Vec<(TypeId, NonNull<u8>, Arc<Extractor>)>>,
+
+    /// Removed additional components that need cleanup when entity is fully dropped
+    #[allow(clippy::type_complexity)]
+    pub(crate) removed_additional: RwLock<Vec<(NonNull<u8>, Arc<Extractor>)>>,
 }
 
 #[repr(transparent)]
@@ -90,6 +94,7 @@ impl EntityData {
             data: unsafe { NonNull::new_unchecked(ptr) },
             extractor,
             additional: RwLock::new(Vec::new()),
+            removed_additional: RwLock::new(Vec::new()),
         };
         Self {
             // SAFETY: Box::into_raw never returns null
@@ -179,7 +184,10 @@ impl EntityData {
 
         let type_id = TypeId::of::<T>();
         let pos = additionals.iter().position(|(tid, _, _)| *tid == type_id)?;
-        let (_, ptr, _) = additionals.swap_remove(pos);
+        let (_, ptr, extractor) = additionals.swap_remove(pos);
+
+        // Store the removed additional for cleanup when EntityData is dropped
+        inner.removed_additional.write().push((ptr, extractor));
 
         Some(crate::Acquirable::new(ptr.cast::<T>(), self.clone()))
     }
@@ -202,6 +210,16 @@ impl Drop for EntityData {
         // Drop all additional data
         let additionals = inner.additional.read();
         for (_, ptr, extractor) in additionals.iter() {
+            // SAFETY: Each dropper corresponds to its data type, and the pointer is valid.
+            // The data was allocated when the additional component was added.
+            unsafe {
+                (extractor.dropper)(*ptr);
+            }
+        }
+
+        // Drop all removed additional data
+        let removed_additionals = inner.removed_additional.read();
+        for (ptr, extractor) in removed_additionals.iter() {
             // SAFETY: Each dropper corresponds to its data type, and the pointer is valid.
             // The data was allocated when the additional component was added.
             unsafe {
