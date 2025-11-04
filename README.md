@@ -367,9 +367,9 @@ structecs is designed for high performance with real-world workloads:
 
 **Basic Operations:**
 
-- Adding 10,000 entities: ~16ms
-- Querying 10,000 entities: ~4ms
-- Querying specific type (10,000): ~3.4ms
+- Adding 10,000 entities: ~2.6ms
+- Querying 10,000 entities: ~343µs
+- Querying specific type (10,000): ~180µs
 
 **Key Optimizations:**
 
@@ -430,7 +430,6 @@ cargo test --test edge_cases_test
 - [x] Thread-safe World operations with DashMap
 - [x] Fine-grained locking per archetype (short-lived)
 - [x] Comprehensive concurrency tests
-
 
 ### Phase 3: Quality & Testing ✅ (Completed)
 
