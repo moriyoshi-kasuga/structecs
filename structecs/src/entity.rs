@@ -108,7 +108,7 @@ impl EntityData {
         crate::Acquirable::new(extracted, self.clone())
     }
 
-    pub (crate) fn data_ptr(&self) -> NonNull<u8> {
+    pub(crate) fn data_ptr(&self) -> NonNull<u8> {
         self.inner().data
     }
 

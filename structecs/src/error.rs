@@ -28,7 +28,7 @@ pub enum WorldError {
     },
 
     /// The archetype for the entity was not found (internal consistency error).
-    /// 
+    ///
     /// This error indicates an internal inconsistency in the World state
     /// and should not normally occur. If you encounter this error, please
     /// file a bug report.
@@ -71,11 +71,7 @@ impl fmt::Display for WorldError {
                 )
             }
             WorldError::ArchetypeNotFound(id) => {
-                write!(
-                    f,
-                    "Archetype not found for entity {} (internal error)",
-                    id
-                )
+                write!(f, "Archetype not found for entity {} (internal error)", id)
             }
         }
     }
