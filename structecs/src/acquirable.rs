@@ -56,9 +56,5 @@ impl<T: 'static> Acquirable<T> {
     }
 }
 
-// SAFETY: Safe to send across threads since we use atomic reference counting
-// for EntityData, and T's thread safety is bounded by its own Send/Sync traits.
-unsafe impl<T: 'static> Send for Acquirable<T> where T: Send {}
-// SAFETY: Safe to share across threads since all access is through shared references,
-// and T's thread safety is bounded by its own Send/Sync traits.
-unsafe impl<T: 'static> Sync for Acquirable<T> where T: Sync {}
+unsafe impl<T: 'static + Send + Sync> Send for Acquirable<T> where T: Send {}
+unsafe impl<T: 'static + Send + Sync> Sync for Acquirable<T> where T: Sync {}
