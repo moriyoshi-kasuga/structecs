@@ -1,50 +1,24 @@
-use std::ptr::NonNull;
+use crate::{Acquirable, Extractable, ExtractionMetadata, entity::EntityData};
 
-use crate::{Acquirable, Extractable, ExtractionMetadata};
-
-struct UnTraitFn<E: Extractable, Args, Return> {
-    #[allow(clippy::type_complexity)]
-    func: Box<dyn Fn(&Acquirable<E>, Args) -> Return>,
-}
-
-impl<E: Extractable, Args, Return> UnTraitFn<E, Args, Return> {
-    pub fn new<F>(func: F) -> Self
-    where
-        F: Fn(&Acquirable<E>, Args) -> Return + 'static,
-    {
-        Self {
-            func: Box::new(func),
-        }
-    }
-
-    pub fn call(&self, entity: &Acquirable<E>, args: Args) -> Return {
-        (self.func)(entity, args)
-    }
-}
-
-struct TypeErasedFn {
-    ptr: NonNull<u8>,
-    dropper: unsafe fn(NonNull<u8>),
+struct TypeErasedFn<Args, Return> {
+    caller: Box<dyn Fn(EntityData, Args) -> Return>,
     #[cfg(debug_assertions)]
     type_name: String,
 }
 
-impl TypeErasedFn {
-    pub fn new<F, E: Extractable, Args, Return>(func: F) -> Self
+impl<Args, Return> TypeErasedFn<Args, Return> {
+    pub fn new<F, E: Extractable>(func: F) -> Self
     where
         F: Fn(&Acquirable<E>, Args) -> Return + 'static,
     {
-        let untrait_fn = UnTraitFn::new(func);
-        let dropper = |ptr: NonNull<u8>| unsafe {
-            let boxed: Box<UnTraitFn<E, Args, Return>> =
-                Box::from_raw(ptr.as_ptr() as *mut UnTraitFn<E, Args, Return>);
-            drop(boxed);
+        let caller = move |data: EntityData, args: Args| -> Return {
+            #[allow(clippy::expect_used)]
+            // SAFETY: We ensure that E is extractable from the EntityData when creating the TypeErasedFn
+            let e = unsafe { &data.extract::<E>().unwrap_unchecked() };
+            func(e, args)
         };
-        let boxed: Box<UnTraitFn<E, Args, Return>> = Box::new(untrait_fn);
-        let raw_ptr = Box::into_raw(boxed) as *mut u8;
         Self {
-            ptr: unsafe { NonNull::new_unchecked(raw_ptr) },
-            dropper,
+            caller: Box::new(caller),
             #[cfg(debug_assertions)]
             type_name: format!(
                 "impl Fn(&Acquirable<{}>, {}) -> {}",
@@ -55,24 +29,17 @@ impl TypeErasedFn {
         }
     }
 
-    pub fn call<E: Extractable, Args, Return>(&self, entity: &Acquirable<E>, args: Args) -> Return {
-        let function = unsafe { &*(self.ptr.as_ptr() as *const UnTraitFn<E, Args, Return>) };
-        function.call(entity, args)
+    pub fn call<E: Extractable>(&self, entity: &Acquirable<E>, args: Args) -> Return {
+        (self.caller)(entity.inner.clone(), args)
     }
 }
 
-impl Drop for TypeErasedFn {
-    fn drop(&mut self) {
-        unsafe { (self.dropper)(self.ptr) };
-    }
-}
+unsafe impl<Args, Return> Send for TypeErasedFn<Args, Return> {}
+unsafe impl<Args, Return> Sync for TypeErasedFn<Args, Return> {}
 
-unsafe impl Send for TypeErasedFn {}
-unsafe impl Sync for TypeErasedFn {}
-
-pub struct ComponentHandler<S: Extractable, Args, Return> {
-    function: TypeErasedFn,
-    _marker: std::marker::PhantomData<(S, Args, Return)>,
+pub struct ComponentHandler<S: Extractable, Args = (), Return = ()> {
+    function: TypeErasedFn<Args, Return>,
+    _marker: std::marker::PhantomData<S>,
 }
 
 impl<S: Extractable, Args, Return> ComponentHandler<S, Args, Return> {
@@ -93,6 +60,15 @@ impl<S: Extractable, Args, Return> ComponentHandler<S, Args, Return> {
     }
 
     pub fn call<E: Extractable>(&self, entity: &Acquirable<E>, args: Args) -> Return {
+        #[cfg(debug_assertions)]
+        if !is_e_has_s::<E, S>() {
+            panic!(
+                "Type S ({}) does not contain type E ({}) in its extraction metadata.",
+                std::any::type_name::<S>(),
+                std::any::type_name::<E>(),
+            );
+        }
+
         self.function.call(entity, args)
     }
 }

@@ -4,7 +4,7 @@ use structecs::*;
 
 #[derive(Debug, Extractable)]
 pub struct Entity {
-    pub death_handler: ComponentHandler<Entity, (), ()>,
+    pub death_handler: ComponentHandler<Entity>,
     pub name: String,
 }
 
@@ -31,11 +31,11 @@ fn main() {
     let world = World::new();
 
     // Define a death handler function
-    let death_handler = ComponentHandler::<Entity, (), ()>::new::<Entity>(|entity, ()| {
+    let death_handler = ComponentHandler::<Entity>::new::<Entity>(|entity, ()| {
         println!("{} has died!", entity.name);
     });
 
-    let player_death_handler = ComponentHandler::<Entity, (), ()>::new::<Player>(|player, ()| {
+    let player_death_handler = ComponentHandler::<Entity>::new::<Player>(|player, ()| {
         println!(
             "Level {} player {} has perished!",
             player.level, player.entity.name
