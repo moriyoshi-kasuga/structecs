@@ -75,7 +75,6 @@ fn test_multiple_same_type_entities() {
     // 残りのエンティティを確認
     let names: Vec<_> = world
         .query::<Player>()
-        .into_iter()
         .map(|(_, p)| p.name.clone())
         .collect();
     assert!(names.contains(&"First".to_string()));

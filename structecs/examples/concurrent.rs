@@ -111,7 +111,6 @@ fn main() {
         let start = std::time::Instant::now();
         let total_health: u32 = world_clone
             .query::<Player>()
-            .into_iter()
             .map(|(_, player)| player.health)
             .sum();
         let elapsed = start.elapsed();
@@ -128,7 +127,6 @@ fn main() {
         let start = std::time::Instant::now();
         let total_damage: u32 = world_clone
             .query::<Monster>()
-            .into_iter()
             .map(|(_, monster)| monster.damage)
             .sum();
         let elapsed = start.elapsed();

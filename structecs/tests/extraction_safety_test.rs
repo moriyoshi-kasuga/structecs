@@ -129,19 +129,17 @@ fn test_extract_concurrent_different_entities() {
 
     let world1 = Arc::clone(&world);
     let world2 = Arc::clone(&world);
-    let id1_clone = id1.clone();
-    let id2_clone = id2.clone();
 
     let handle1 = thread::spawn(move || {
         for _ in 0..1000 {
-            let comp = world1.extract_component::<Component1>(&id1_clone).unwrap();
+            let comp = world1.extract_component::<Component1>(&id1).unwrap();
             assert_eq!(comp.value, 1);
         }
     });
 
     let handle2 = thread::spawn(move || {
         for _ in 0..1000 {
-            let comp = world2.extract_component::<Component1>(&id2_clone).unwrap();
+            let comp = world2.extract_component::<Component1>(&id2).unwrap();
             assert_eq!(comp.value, 2);
         }
     });
@@ -159,13 +157,10 @@ fn test_extract_concurrent_same_component() {
 
     for _ in 0..10 {
         let world_clone = Arc::clone(&world);
-        let id_clone = id.clone();
 
         let handle = thread::spawn(move || {
             for _ in 0..1000 {
-                let comp = world_clone
-                    .extract_component::<Component1>(&id_clone)
-                    .unwrap();
+                let comp = world_clone.extract_component::<Component1>(&id).unwrap();
                 assert_eq!(comp.value, 999);
             }
         });
@@ -272,7 +267,7 @@ fn test_extract_stress() {
     // Add many entities
     let mut ids = vec![];
     for i in 0..1000 {
-        let id = world.add_entity(Component1 { value: i as i32 });
+        let id = world.add_entity(Component1 { value: i });
         ids.push(id);
     }
 
