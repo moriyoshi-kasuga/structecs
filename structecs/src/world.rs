@@ -552,6 +552,10 @@ impl World {
         results
     }
 
+    pub fn query_iter<T: 'static>(&self) -> crate::query::QueryIter<T> {
+        crate::query::QueryIter::new(self)
+    }
+
     /// Get the number of entities in the world.
     pub fn entity_count(&self) -> usize {
         self.entity_index.len()

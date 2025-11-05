@@ -1,26 +1,20 @@
 use std::{any::TypeId, sync::Arc};
 
-use dashmap::DashMap;
+use dashmap::{DashMap, iter::Iter};
 use rustc_hash::FxBuildHasher;
 
 use crate::{EntityId, Extractable, World, entity::EntityData};
 
-pub struct QueryIter<'a, T: Extractable> {
+type DashMapIter<'a> = Iter<'a, EntityId, EntityData, FxBuildHasher>;
+
+pub struct QueryIter<T: 'static> {
     _phantom: std::marker::PhantomData<T>,
+    #[allow(clippy::type_complexity)]
     matching: Vec<(usize, Arc<DashMap<EntityId, EntityData, FxBuildHasher>>)>,
-    current: Option<(
-        usize,
-        dashmap::iter::Iter<
-            'a,
-            EntityId,
-            EntityData,
-            FxBuildHasher,
-            DashMap<EntityId, EntityData, FxBuildHasher>,
-        >,
-    )>,
+    current: Option<(usize, DashMapIter<'static>)>,
 }
 
-impl<'a, T: Extractable> QueryIter<'a, T> {
+impl<T: 'static> QueryIter<T> {
     pub(crate) fn new(world: &World) -> Self {
         let type_id = TypeId::of::<T>();
         let archetype = world
@@ -34,7 +28,8 @@ impl<'a, T: Extractable> QueryIter<'a, T> {
                     let offset = unsafe { a.extractor.offset(&type_id).unwrap_unchecked() };
                     (offset, a.entities.clone())
                 })
-            });
+            })
+            .collect();
         Self {
             _phantom: std::marker::PhantomData,
             matching: archetype,
@@ -43,7 +38,7 @@ impl<'a, T: Extractable> QueryIter<'a, T> {
     }
 }
 
-impl<'a, T: Extractable> Iterator for QueryIter<'a, T> {
+impl<T: Extractable> Iterator for QueryIter<T> {
     type Item = (EntityId, crate::Acquirable<T>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -56,13 +51,16 @@ impl<'a, T: Extractable> Iterator for QueryIter<'a, T> {
                 } else {
                     self.current = None;
                 }
+            } else if let Some((offset, next_map)) = self.matching.pop() {
+                let iter = next_map.iter();
+                // SAFETY: We transmute the lifetime of the iterator to 'static because
+                // the underlying DashMap is held in an Arc within the QueryIter struct,
+                // ensuring that it lives as long as the QueryIter itself.
+                let iter =
+                    unsafe { std::mem::transmute::<DashMapIter<'_>, DashMapIter<'static>>(iter) };
+                self.current = Some((offset, iter));
             } else {
-                todo!();
-                // if let Some((offset, next_map)) = self.matching.pop() {
-                //     self.current = Some((offset, next_map.iter()));
-                // } else {
-                //     return None;
-                // }
+                return None;
             }
         }
     }

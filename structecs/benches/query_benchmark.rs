@@ -104,6 +104,26 @@ fn bench_queryator(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_query_iter(c: &mut Criterion) {
+    let mut group = c.benchmark_group("query_iter");
+
+    for size in [100, 1000, 10000].iter() {
+        let (world, _ids) = setup_world(*size);
+        group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
+            b.iter(|| {
+                let mut count = 0;
+                for (_, pos) in world.query_iter::<Position>() {
+                    count += 1;
+                    black_box(pos);
+                }
+                black_box(count);
+            });
+        });
+    }
+
+    group.finish();
+}
+
 fn bench_query_specific_type(c: &mut Criterion) {
     let mut group = c.benchmark_group("query_specific_type");
 
@@ -144,6 +164,7 @@ criterion_group!(
     benches,
     bench_add_entities,
     bench_queryator,
+    bench_query_iter,
     bench_query_specific_type,
     bench_extract_component
 );
