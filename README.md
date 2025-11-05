@@ -196,8 +196,7 @@ if world.contains_entity(&player_id) {
 - `remove_entities(entity_ids: &[EntityId])` - Fast batch removal (silently skips not found)
 - `contains_entity(entity_id: &EntityId) -> bool` - Check if entity exists in world
 - `clear()` - Remove all entities from world
-- `query<T: 'static>() -> Vec<(EntityId, Acquirable<T>)>` - Snapshot of entities with component T
-- `query_iter<T: 'static>() -> QueryIter<T>` - Iterator over entities with component T (lazy evaluation)
+- `query<T: 'static>() -> QueryIter<T>` - Lazy iterator over entities with component T
 - `extract_component<T>(entity_id: &EntityId) -> Result<Acquirable<T>, WorldError>` - Get specific component
 - `entity_count() -> usize` - Get total number of entities
 - `archetype_count() -> usize` - Get number of archetypes

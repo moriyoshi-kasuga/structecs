@@ -306,9 +306,7 @@ impl World {
     pub fn clear(&self);
     pub fn extract_component<T: 'static>(&self, entity_id: &EntityId) 
         -> Result<Acquirable<T>, WorldError>;
-    pub fn query<T: 'static>(&self) 
-        -> Vec<(EntityId, Acquirable<T>)>;
-    pub fn query_iter<T: 'static>(&self) -> QueryIter<T>;
+    pub fn query<T: 'static>(&self) -> QueryIter<T>;
     pub fn entity_count(&self) -> usize;
     pub fn archetype_count(&self) -> usize;
 }
@@ -358,22 +356,28 @@ for archetype_id in &archetype_ids {
 
 ```rust
 impl World {
-    pub fn query<T: 'static>(&self) -> Vec<(EntityId, Acquirable<T>)> {
+    pub fn query<T: 'static>(&self) -> QueryIter<T> {
         let type_id = TypeId::of::<T>();
         
         // Type Indexから該当アーキタイプのみを取得
         let archetype_ids: FxHashSet<ArchetypeId> = self.type_index.get(&type_id).map(|ids| ids.clone()).unwrap_or_default();
         
-        // 集計用ベクタにスナップショット収集
-        let mut results = Vec::new();
+        // イテレータを構築
+        let mut matching = Vec::new();
         
         for arch_id in archetype_ids {
             if let Some(archetype) = self.archetypes.get(&arch_id) {
                 // 安全: Type Indexにより T を含むアーキタイプのみ
-                results.extend(unsafe { archetype.iter_component_unchecked::<T>() });
+                let offset = archetype.extractor.offsets.get(&type_id).copied().unwrap();
+                matching.push((offset, archetype.entities.clone()));
             }
         }
-        results
+        
+        QueryIter {
+            _phantom: std::marker::PhantomData,
+            matching,
+            current: None,
+        }
     }
 }
 ```
@@ -390,31 +394,25 @@ pub struct QueryIter<T: 'static> {
 }
 ```
 
-**query() vs query_iter():**
+**query():**
 
-| 特性 | `query()` | `query_iter()` |
-|------|-----------|----------------|
-| 戻り値 | `Vec<(EntityId, Acquirable<T>)>` | `QueryIter<T>` |
-| メモリ確保 | すべてのエンティティを事前に収集 | 必要なときだけ取得 |
-| 遅延評価 | ❌ 即座に全件取得 | ✅ イテレート時に取得 |
-| 大量クエリ | メモリ使用量大 | メモリ効率的 |
-| 早期終了 | 全データ確保後に可能 | 即座に終了可能 |
+`query()`は`QueryIter<T>`を返す遅延評価イテレータです。
+
+| 特性 | `query()` |
+|------|-----------|
+| 戻り値 | `QueryIter<T>` |
+| メモリ確保 | 必要なときだけ取得 |
+| 遅延評価 | ✅ イテレート時に取得 |
+| 大量クエリ | メモリ効率的 |
+| 早期終了 | 即座に終了可能 |
 
 **使用例:**
 
 ```rust
-// query(): すべてのPlayerを事前に収集（メモリ使用量大）
-let all_players = world.query::<Player>();
-for (id, player) in all_players {
+// query(): 遅延評価でPlayerを取得（メモリ効率的）
+for (id, player) in world.query::<Player>() {
     if player.name == "Hero" {
-        break;  // 1件見つかっても全データは既に確保済み
-    }
-}
-
-// query_iter(): 必要なときだけ取得（メモリ効率的）
-for (id, player) in world.query_iter::<Player>() {
-    if player.name == "Hero" {
-        break;  // ここで即座に終了、残りは未確保
+        break;  // 即座に終了、残りは未確保
     }
 }
 ```
@@ -455,31 +453,25 @@ impl<T: Extractable> Iterator for QueryIter<T> {
 }
 ```
 
-**メモリ効率性の比較:**
+**メモリ効率性:**
 
 ```rust
 // シナリオ: 10,000体のPlayerから1体を検索
 
-// query() - 不効率
-let players = world.query::<Player>();  // 10,000個のAcquirableを事前確保
-for (id, player) in players {
-    if player.level > 100 {
-        break;  // 1件しか使わないのに全確保済み
-    }
-}
-
-// query_iter() - 効率的
-for (id, player) in world.query_iter::<Player>() {
+// query(): 効率的
+for (id, player) in world.query::<Player>() {
     if player.level > 100 {
         break;  // 必要な分だけ確保して即座に終了
     }
 }
 ```
 
-**使い分けの指針:**
+**イテレータの特性:**
 
-- `query()`: 全件処理、フィルタリング後にソート、小規模クエリ（< 1000件）
-- `query_iter()`: 早期終了、大規模クエリ、メモリ制約がある場合
+- ✅ 遅延評価: エンティティは`Iterator::next()`呼び出し時に取得される
+- ✅ 早期終了: `break`で即座にイテレーションを終了できる
+- ✅ メモリ効率: 必要なエンティティのみをオンデマンドで確保
+- ✅ 大規模クエリ: 数万〜数十万エンティティでもメモリ使用量は最小限
 
 ### 9. ComponentHandler: ポリモーフィック動作
 
@@ -652,23 +644,26 @@ World::add_entity():
            ↓
 World::query():
   1. Type Indexから該当Archetype集合を取得
-  2. 各Archetypeから iter_component_unchecked() でスナップショット収集
-  3. Vecに収集して返却（イテレータではない）
+  2. 各ArchetypeのDashMapへの参照（Arc）を収集
+  3. QueryIterを構築して返却（遅延評価イテレータ）
            ↓
 ユーザーコード:
-  for (id, health) in iter {
+  for (id, health) in world.query::<Health>() {
+    // Iterator::next()呼び出し時に初めてエンティティを取得
     // この時点でロックは一切保持していない
   }
 ```
 
-**スナップショット戦略:**
+**遅延評価戦略:**
 
-- クエリ時に短時間だけロック
-- データをコピー（EntityIdと参照カウント増加）
-- ロック解放後、イテレータ消費
+- クエリ時はArchetypeの参照のみを収集（軽量）
+- イテレート時に必要なエンティティだけを取得（オンデマンド）
+- 各エンティティ取得時に短時間だけロック、即座に解放
 
 **メリット:**
 
+- メモリ使用量が最小限（必要なエンティティのみ確保）
+- 早期終了が可能（`break`で即座に終了）
 - クエリ中に他のスレッドがエンティティ追加可能
 - クエリ同士も並列実行可能
 - デッドロックのリスクゼロ
@@ -896,11 +891,11 @@ world.query::<Item>();             // Item archetype を読み取りロック
 ```rust
 // スレッド1、2、3すべて同時実行可能
 for (id, player) in world.query::<Player>() {
-    // 読み取りロック（短時間、スナップショット後解放）
+    // Iterator::next()呼び出し時に短時間だけロック、即座に解放
 }
 ```
 
-**ロック競合:** なし（スナップショットは短時間の内部ロック/なし）
+**ロック競合:** なし（エンティティ取得時のみ短時間ロック）
 
 #### パターン3: 同一アーキタイプへの書き込み（直列化）
 
@@ -920,7 +915,7 @@ world.add_entity(Player { ... });
 
 1. **データ競合の防止:** すべての共有状態は`Sync`型
 2. **use-after-freeの防止:** `Acquirable`による参照カウント
-3. **デッドロックの防止:** ロック順序の一貫性、スナップショット戦略
+3. **デッドロックの防止:** ロック順序の一貫性、遅延評価による短時間ロック
 4. **メモリ安全性:** `T`の`Send`/`Sync`を尊重
 
 ---
@@ -1011,8 +1006,8 @@ pub(crate) struct EntityDataInner {
 
 1. **アーキタイプベースストレージ** - 同じ型のエンティティは連続配置
 2. **Extractorキャッシング** - 各型につき1つのExtractor（共有）
-3. **イテレータベースAPI** - アロケーションなし
-4. **スナップショット戦略** - 短時間のロック保持
+3. **遅延評価イテレータ** - 必要なエンティティのみをオンデマンドで確保
+4. **短時間ロック** - エンティティ取得時のみロック、即座に解放
 5. **細粒度ロック** - アーキタイプ単位の並行処理
 
 ---
@@ -1037,15 +1032,16 @@ let player = world.extract_component::<Mutex<PlayerState>>(&id)?;
 let mut state = player.lock().unwrap();
 ```
 
-### 2. スナップショット vs ライブビュー
+### 2. 遅延評価イテレータ
 
-**判断:** クエリは**スナップショット**を返す。
+**判断:** クエリは**遅延評価イテレータ**を返す。
 
 **採用理由:**
 
-- 並行処理を最優先
-- ゲームサーバーでは「少し前の状態」で十分
-- メモリは比較的潤沢
+- メモリ効率性（必要なエンティティのみ確保）
+- 早期終了が可能（`break`で即座に終了）
+- 並行処理を最優先（短時間ロックで即座に解放）
+- 大規模クエリでもメモリ使用量が一定
 
 ### 3. 動的型抽出 vs コンパイル時型安全
 
