@@ -29,6 +29,7 @@ impl Extractor {
     ///
     /// # Safety
     /// The caller must ensure the pointer is used correctly and not outlive the entity data.
+    #[inline(always)]
     pub(crate) unsafe fn extract_ptr<T: 'static>(&self, data: NonNull<u8>) -> Option<NonNull<T>> {
         let type_id = const { TypeId::of::<T>() };
         let offset = self.offsets.get(&type_id)?;

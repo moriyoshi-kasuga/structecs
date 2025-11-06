@@ -240,7 +240,10 @@ mod hecs_bench {
 
     pub fn query_all(world: &World) -> usize {
         let mut count = 0;
-        for item in world.query::<(&Position, &Velocity, &Health, &Name)>().iter() {
+        for item in world
+            .query::<(&Position, &Velocity, &Health, &Name)>()
+            .iter()
+        {
             count += 1;
             black_box(item);
         }
@@ -328,9 +331,7 @@ mod specs_bench {
         let healths = world.read_storage::<SpecsHealth>();
         let names = world.read_storage::<SpecsName>();
 
-        for (pos, vel, health, name) in
-            (&positions, &velocities, &healths, &names).join()
-        {
+        for (pos, vel, health, name) in (&positions, &velocities, &healths, &names).join() {
             count += 1;
             black_box((pos, vel, health, name));
         }
@@ -358,27 +359,19 @@ fn bench_add_entities(c: &mut Criterion) {
     let mut group = c.benchmark_group("add_entities");
 
     for size in [100, 1000, 10000].iter() {
-        group.bench_with_input(
-            BenchmarkId::new("structecs", size),
-            size,
-            |b, &size| {
-                b.iter(|| {
-                    let world = structecs_bench::add_entities(size);
-                    black_box(world);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("structecs", size), size, |b, &size| {
+            b.iter(|| {
+                let world = structecs_bench::add_entities(size);
+                black_box(world);
+            });
+        });
 
-        group.bench_with_input(
-            BenchmarkId::new("bevy_ecs", size),
-            size,
-            |b, &size| {
-                b.iter(|| {
-                    let world = bevy_bench::add_entities(size);
-                    black_box(world);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("bevy_ecs", size), size, |b, &size| {
+            b.iter(|| {
+                let world = bevy_bench::add_entities(size);
+                black_box(world);
+            });
+        });
 
         group.bench_with_input(BenchmarkId::new("hecs", size), size, |b, &size| {
             b.iter(|| {
@@ -403,28 +396,20 @@ fn bench_query_all(c: &mut Criterion) {
 
     for size in [100, 1000, 10000].iter() {
         let structecs_world = structecs_bench::add_entities(*size);
-        group.bench_with_input(
-            BenchmarkId::new("structecs", size),
-            size,
-            |b, _| {
-                b.iter(|| {
-                    let count = structecs_bench::query_all(&structecs_world);
-                    black_box(count);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("structecs", size), size, |b, _| {
+            b.iter(|| {
+                let count = structecs_bench::query_all(&structecs_world);
+                black_box(count);
+            });
+        });
 
         let mut bevy_world = bevy_bench::add_entities(*size);
-        group.bench_with_input(
-            BenchmarkId::new("bevy_ecs", size),
-            size,
-            |b, _| {
-                b.iter(|| {
-                    let count = bevy_bench::query_all(&mut bevy_world);
-                    black_box(count);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("bevy_ecs", size), size, |b, _| {
+            b.iter(|| {
+                let count = bevy_bench::query_all(&mut bevy_world);
+                black_box(count);
+            });
+        });
 
         let hecs_world = hecs_bench::add_entities(*size);
         group.bench_with_input(BenchmarkId::new("hecs", size), size, |b, _| {
@@ -451,28 +436,20 @@ fn bench_query_two_components(c: &mut Criterion) {
 
     for size in [100, 1000, 10000].iter() {
         let structecs_world = structecs_bench::add_entities(*size);
-        group.bench_with_input(
-            BenchmarkId::new("structecs", size),
-            size,
-            |b, _| {
-                b.iter(|| {
-                    let count = structecs_bench::query_position_velocity(&structecs_world);
-                    black_box(count);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("structecs", size), size, |b, _| {
+            b.iter(|| {
+                let count = structecs_bench::query_position_velocity(&structecs_world);
+                black_box(count);
+            });
+        });
 
         let mut bevy_world = bevy_bench::add_entities(*size);
-        group.bench_with_input(
-            BenchmarkId::new("bevy_ecs", size),
-            size,
-            |b, _| {
-                b.iter(|| {
-                    let count = bevy_bench::query_position_velocity(&mut bevy_world);
-                    black_box(count);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("bevy_ecs", size), size, |b, _| {
+            b.iter(|| {
+                let count = bevy_bench::query_position_velocity(&mut bevy_world);
+                black_box(count);
+            });
+        });
 
         let hecs_world = hecs_bench::add_entities(*size);
         group.bench_with_input(BenchmarkId::new("hecs", size), size, |b, _| {
@@ -499,16 +476,12 @@ fn bench_nested_query(c: &mut Criterion) {
 
     for size in [100, 1000, 10000].iter() {
         let structecs_world = structecs_bench::add_entities(*size);
-        group.bench_with_input(
-            BenchmarkId::new("structecs", size),
-            size,
-            |b, _| {
-                b.iter(|| {
-                    let count = structecs_bench::query_nested(&structecs_world);
-                    black_box(count);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("structecs", size), size, |b, _| {
+            b.iter(|| {
+                let count = structecs_bench::query_nested(&structecs_world);
+                black_box(count);
+            });
+        });
     }
 
     group.finish();

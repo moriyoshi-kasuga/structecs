@@ -11,6 +11,7 @@ pub struct Acquirable<T: 'static> {
 }
 
 impl<T: 'static> Clone for Acquirable<T> {
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self {
             target: self.target,
@@ -51,6 +52,7 @@ impl<T: 'static> Acquirable<T> {
     }
 
     /// Extract a different component type from the same entity.
+    #[inline(always)]
     pub fn extract<U: 'static>(&self) -> Option<Acquirable<U>> {
         // SAFETY: extract_ptr performs type checking via the Extractor
         // and only returns a pointer if type U exists in the entity.
