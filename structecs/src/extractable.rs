@@ -24,6 +24,7 @@ pub enum ExtractionMetadata {
 
 impl ExtractionMetadata {
     /// Create metadata for a direct target type.
+    #[inline]
     pub const fn new<T: 'static>(offset: usize) -> Self {
         Self::Target {
             type_id: TypeId::of::<T>(),
@@ -32,6 +33,7 @@ impl ExtractionMetadata {
     }
 
     /// Create metadata for a nested extractable type.
+    #[inline]
     pub const fn new_nested<T: crate::Extractable>(
         offset: usize,
         nested: &'static [ExtractionMetadata],
@@ -44,6 +46,7 @@ impl ExtractionMetadata {
     }
 
     /// Flatten nested metadata into a single HashMap of type -> offset mappings.
+    #[inline]
     pub fn flatten(list: &[ExtractionMetadata]) -> FxHashMap<TypeId, usize> {
         let mut result = FxHashMap::default();
         Self::flatten_internal(list, 0, &mut result);

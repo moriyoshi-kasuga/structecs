@@ -12,6 +12,7 @@ pub struct EntityId {
 }
 
 impl EntityId {
+    #[inline]
     pub(crate) fn new(id: u32) -> Self {
         Self { id }
     }
@@ -21,6 +22,7 @@ impl EntityId {
     /// # Safety
     /// The caller must ensure that the provided `id` is valid and unique within the context
     /// of the World. Using an invalid or duplicate ID may lead to undefined behavior.
+    #[inline]
     pub fn from_raw(id: u32) -> Self {
         Self { id }
     }

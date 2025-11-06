@@ -20,6 +20,7 @@ impl<T: 'static> Clone for Acquirable<T> {
 }
 
 impl<T: 'static> AsRef<T> for Acquirable<T> {
+    #[inline]
     fn as_ref(&self) -> &T {
         // SAFETY: target points to valid T within the entity data,
         // which is kept alive by the inner EntityData.
@@ -30,6 +31,7 @@ impl<T: 'static> AsRef<T> for Acquirable<T> {
 impl<T: 'static> Deref for Acquirable<T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         self.as_ref()
     }
