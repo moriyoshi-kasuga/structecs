@@ -22,7 +22,14 @@ structecs-macros = { path = "../structecs-macros", version = "0" }
 
 [dev-dependencies]
 criterion = "0.7"
+bevy_ecs = "0.15"
+hecs = "0.10"
+specs = { version = "0.20", default-features = false }
 
 [[bench]]
 name = "query_benchmark"
+harness = false
+
+[[bench]]
+name = "ecs_comparison"
 harness = false

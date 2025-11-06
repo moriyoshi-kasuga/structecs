@@ -14,13 +14,8 @@ Manage your data like ECS, control your logic like OOP.
 ## ⚠️ Development Status
 
 This crate is currently under active development. The API is not stable and may change significantly.
-
-**Recent Updates:**
-
-- ✅ Archetype-based storage implemented
-- ✅ Snapshot-based queries with type index
-- ✅ Thread-safe operations using DashMap
-- ✅ Comprehensive test suite (integration, concurrency, memory safety, edge cases)
+Currently, performance is quite poor compared to established ECS frameworks.
+Use at your own risk. Feedback and contributions are welcome!
 
 ---
 
@@ -109,7 +104,7 @@ fn main() {
 
 - Simple games where traditional ECS works well
 - Projects heavily invested in existing ECS ecosystems
-- Use cases requiring absolute maximum performance (though structecs is quite fast!)
+- Use cases requiring absolute maximum performance
 
 ---
 
@@ -374,7 +369,6 @@ The Extractor knows:
 This gives you:
 
 - **Expressiveness** of OOP (nested data, clear relationships)
-- **Performance** of data-oriented design (offset-based access, no virtual dispatch)
 - **Flexibility** of procedural code (write systems however you want)
 
 ### Mutability Design
@@ -420,27 +414,6 @@ This design philosophy prioritizes flexibility and performance in concurrent env
 
 ---
 
-## Performance
-
-structecs is designed for high performance with real-world workloads:
-
-### Benchmark Results (Release mode)
-
-**Basic Operations:**
-
-- Adding 10,000 entities: ~2.7ms
-- Querying 10,000 entities: ~273µs
-- Querying specific type (10,000): ~137µs
-
-**Key Optimizations:**
-
-1. **Archetype Storage**: Entities with the same type are stored contiguously
-2. **Type-indexed Snapshot Queries**: Avoid scanning unrelated archetypes; short-lived locks
-3. **Extractor Caching**: Each type gets one shared extractor
-4. **Compile-time Offsets**: Component access via direct pointer arithmetic
-
----
-
 ## Testing
 
 structecs has a comprehensive test suite:
@@ -472,30 +445,6 @@ cargo test --test edge_cases_test
 | **Nesting** | Components are flat | Components can nest ✓ |
 | **Cache Coherency** | Excellent (packed arrays) | Good (archetype storage) |
 | **Flexibility** | Constrained by System API | Maximum flexibility ✓ |
-
----
-
-## Development Roadmap
-
-### Phase 1: Performance ✅ (Completed)
-
-- [x] Archetype-based storage for better cache locality
-- [x] Snapshot-based queries (Vec snapshot per call)
-- [x] Extractor caching for zero-cost component access
-- [x] Type index for fast archetype lookup
-- [x] Modular codebase structure
-
-### Phase 2: Multi-threading (Partially Completed)
-
-- [x] Thread-safe World operations with DashMap
-- [x] Fine-grained locking per archetype (short-lived)
-- [x] Comprehensive concurrency tests
-
-### Phase 3: Quality & Testing ✅ (Completed)
-
-- [x] Entity removal
-- [x] Memory safety verification
-- [x] Comprehensive test suite
 
 ---
 
