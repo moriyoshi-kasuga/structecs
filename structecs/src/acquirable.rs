@@ -20,7 +20,7 @@ impl<T: 'static> Clone for Acquirable<T> {
 }
 
 impl<T: 'static> AsRef<T> for Acquirable<T> {
-    #[inline]
+    #[inline(always)]
     fn as_ref(&self) -> &T {
         // SAFETY: target points to valid T within the entity data,
         // which is kept alive by the inner EntityData.
@@ -31,18 +31,19 @@ impl<T: 'static> AsRef<T> for Acquirable<T> {
 impl<T: 'static> Deref for Acquirable<T> {
     type Target = T;
 
-    #[inline]
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.as_ref()
     }
 }
 
 impl<T: 'static> Acquirable<T> {
+    #[inline(always)]
     pub(crate) fn new(target: NonNull<T>, inner: EntityData) -> Self {
         Self { target, inner }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) unsafe fn new_target(inner: EntityData) -> Self {
         // SAFETY: The caller must ensure that T is the correct type for the entity data.
         // Typically called after type checking via Extractor.

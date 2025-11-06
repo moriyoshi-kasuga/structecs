@@ -37,6 +37,7 @@ impl Extractor {
         Some(unsafe { data.add(*offset).cast::<T>() })
     }
 
+    #[inline(always)]
     pub(crate) fn offset(&self, type_id: &TypeId) -> Option<usize> {
         self.offsets.get(type_id).copied()
     }

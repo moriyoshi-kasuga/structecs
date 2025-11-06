@@ -1,7 +1,4 @@
-use std::{
-    ptr::NonNull,
-    sync::{Arc, atomic::AtomicUsize},
-};
+use std::{ptr::NonNull, sync::Arc};
 
 use crate::extractor::Extractor;
 
@@ -81,19 +78,19 @@ impl EntityData {
         crate::Acquirable::new(extracted, self.clone())
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn data_ptr(&self) -> NonNull<u8> {
         self.inner.data
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn extract<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
         // SAFETY: extract_ptr validates the type through the Extractor
         let extracted = unsafe { self.extract_ptr::<T>()? };
         Some(crate::Acquirable::new(extracted, self.clone()))
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) unsafe fn extract_ptr<T: 'static>(&self) -> Option<NonNull<T>> {
         // SAFETY: The caller must ensure proper synchronization. The extractor validates
         // that type T exists in the entity data and returns None if not present.
