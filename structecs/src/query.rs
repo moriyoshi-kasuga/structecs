@@ -17,22 +17,22 @@ pub struct QueryIter<T: 'static> {
 impl<T: 'static> QueryIter<T> {
     pub(crate) fn new(world: &World) -> Self {
         let type_id = TypeId::of::<T>();
-        let archetype = world
-            .type_index
-            .get(&type_id)
-            .iter()
-            .flat_map(|ids| ids.iter())
-            .filter_map(|archetype_id| {
-                world.archetypes.get(archetype_id).map(|a| {
+        let matching = if let Some(archetype_ids) = world.type_index.get(&type_id) {
+            let mut result = Vec::with_capacity(archetype_ids.len());
+            for archetype_id in archetype_ids.iter() {
+                if let Some(archetype) = world.archetypes.get(archetype_id) {
                     // SAFETY: The archetype is guaranteed to contain type T
-                    let offset = unsafe { a.extractor.offset(&type_id).unwrap_unchecked() };
-                    (offset, a.entities.clone())
-                })
-            })
-            .collect();
+                    let offset = unsafe { archetype.extractor.offset(&type_id).unwrap_unchecked() };
+                    result.push((offset, archetype.entities.clone()));
+                }
+            }
+            result
+        } else {
+            Vec::new()
+        };
         Self {
             _phantom: std::marker::PhantomData,
-            matching: archetype,
+            matching,
             current: None,
         }
     }
