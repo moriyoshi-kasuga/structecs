@@ -30,7 +30,7 @@ impl Extractor {
     /// # Safety
     /// The caller must ensure the pointer is used correctly and not outlive the entity data.
     pub(crate) unsafe fn extract_ptr<T: 'static>(&self, data: NonNull<u8>) -> Option<NonNull<T>> {
-        let type_id = TypeId::of::<T>();
+        let type_id = const { TypeId::of::<T>() };
         let offset = self.offsets.get(&type_id)?;
         // SAFETY: The offset is valid for type T and was computed during type analysis.
         // The data pointer points to the base of the entity data.
