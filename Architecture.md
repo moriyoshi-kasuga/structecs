@@ -12,6 +12,7 @@
 6. [メモリモデル](#メモリモデル)
 7. [パフォーマンス特性](#パフォーマンス特性)
 8. [技術的制約と設計判断](#技術的制約と設計判断)
+9. [まとめ](#まとめ)
 
 ---
 
@@ -97,15 +98,9 @@ pub struct Player {
 for (id, entity) in world.query::<Entity>() {
     println!("Name: {}", entity.name);
 }
-
-for (id, living) in world.query::<LivingEntity>() {
-    println!("Health: {}/{}", living.health, living.max_health);
-}
-
-for (id, player) in world.query::<Player>() {
-    println!("Player: {}", player.living.entity.name);
-}
 ```
+
+> **詳細なコード例**: `examples/hierarchical.rs` を参照してください。
 
 **重要な制約:**
 
@@ -138,13 +133,9 @@ pub struct Player {
 pub struct Inventory {
     pub items: Mutex<Vec<Item>>,  // ← 必要な時だけロック
 }
-
-// パターン3: RwLockを使う（読み取り/書き込み分離）
-#[derive(Extractable)]
-pub struct Position {
-    pub coords: RwLock<Vec3>,
-}
 ```
+
+> **詳細な使用例**: `examples/mutability.rs` を参照してください。
 
 **なぜ`query_mut()`を提供しないのか:**
 
@@ -156,20 +147,13 @@ pub struct Position {
 
 **哲学:** フレームワークはデータ管理に徹し、ロジックの構造はユーザーに委ねる。
 
-```rust
-// 好きなように書ける
-fn update_physics(world: &World, delta: f32) {
-    for (id, pos) in world.query::<Position>() {
-        let vel = world.extract_component::<Vec3>(&id).unwrap();
-        let mut pos = pos.write().unwrap();
-        pos.x += vel.x * delta;
-    }
-}
-```
+従来のECSフレームワークでは、Systemという特定のパターンを強制することで、ユーザーのロジック記述方法が制限されます。structecsでは、データ管理とロジック記述を分離し、ユーザーが自由に記述できるようにしています。
 
 ---
 
 ## コアコンセプト
+
+> **API詳細**: 各型の詳細なドキュメントは `cargo doc --open` で確認してください。
 
 ### 1. Entity: エンティティ識別子
 
@@ -192,21 +176,9 @@ pub struct EntityId {
 pub trait Extractable: 'static + Sized {
     const METADATA_LIST: &'static [ExtractionMetadata];
 }
-
-pub enum ExtractionMetadata {
-    Target {
-        type_id: TypeId,
-        offset: usize,
-    },
-    Nested {
-        type_id: TypeId,
-        offset: usize,
-        nested: &'static [ExtractionMetadata],
-    },
-}
 ```
 
-コンパイル時に生成されるメタデータで、型抽出に必要なオフセット情報を保持。
+コンパイル時に生成されるメタデータで、型抽出に必要なオフセット情報を保持。`#[derive(Extractable)]`マクロで自動実装されます。
 
 ### 3. Extractor: 型抽出エンジン
 
@@ -223,55 +195,36 @@ pub struct Extractor {
 2. ポインタ演算でコンポーネントにアクセス
 3. エンティティの安全なドロップ
 
-**動作原理:**
+**動作原理の概要:**
 
-```rust
-// Player構造体のメモリレイアウト
-Player {
-    entity: Entity {      // offset: 0
-        name: String,     // offset: 0
-    },
-    health: u32,          // offset: 24
-}
+Extractorは、構造体のメモリレイアウトを解析し、各型のオフセットをマップとして保持します。クエリ時にはこのオフセット情報を使ってゼロコストで型を抽出できます。
 
-// Extractorが保持するオフセットマップ
-offsets = {
-    TypeId(Entity): 0,
-    TypeId(u32): 24,
-}
-
-// 抽出時（ゼロコスト！）
-let player_ptr: *const Player = ...;
-let health_ptr = player_ptr.offset(24) as *const u32;
-```
+> **実装詳細**: `src/extractor.rs` および `cargo doc --open` を参照してください。
 
 ### 4. Archetype: 同一構造のエンティティ群
 
 ```rust
 pub struct Archetype {
-    pub(crate) extractor: Arc<Extractor>,
+    pub(crate) extractor: &'static Extractor,
     pub(crate) entities: Arc<DashMap<EntityId, EntityData, FxBuildHasher>>,
 }
 ```
+
+同じ型のエンティティは同じArchetypeに格納され、キャッシュ効率が向上します。
 
 ### 5. Acquirable: スマートポインタ
 
 ```rust
 pub struct Acquirable<T: 'static> {
     target: NonNull<T>,
-    inner: EntityData,  // 参照カウント
-}
-
-impl<T> Deref for Acquirable<T> {
-    type Target = T;
-    fn deref(&self) -> &T { ... }
+    inner: EntityData,  // 参照カウント（Arc）
 }
 ```
 
 **責務:**
 
 1. コンポーネントへの安全な参照
-2. エンティティデータのライフタイム管理（Arc的な動作）
+2. エンティティデータのライフタイム管理
 3. 同一エンティティからの追加抽出
 
 ### 6. World: 中央ストレージ
@@ -280,7 +233,7 @@ impl<T> Deref for Acquirable<T> {
 pub struct World {
     archetypes: DashMap<ArchetypeId, Archetype, FxBuildHasher>,
     entity_index: DashMap<EntityId, ArchetypeId, FxBuildHasher>,
-    type_index: DashMap<TypeId, FxHashSet<ArchetypeId>, FxBuildHasher>,  // 型からアーキタイプを高速検索
+    type_index: DashMap<TypeId, FxHashSet<ArchetypeId>, FxBuildHasher>,
     next_entity_id: AtomicU32,
 }
 ```
@@ -288,31 +241,13 @@ pub struct World {
 **設計の核心:**
 
 1. **DashMap**: 並行HashMap（ロックフリー読み取り）
-2. **Archetype内部にDashMap**: アーキタイプはスレッド安全な並行マップで管理
+2. **Archetype内部にDashMap**: スレッド安全な並行マップで管理
 3. **AtomicU32**: ロックフリーなID生成
 4. **Type Index**: クエリ最適化のための逆引きマップ
 
-**主要API:**
+> **主要API**: README.mdまたは `cargo doc --open` を参照してください。
 
-```rust
-impl World {
-    pub fn add_entity<E: Extractable>(&self, entity: E) -> EntityId;
-    pub fn add_entity_with_acquirable<E: Extractable>(&self, entity: E) -> (EntityId, Acquirable<E>);
-    pub fn add_entities<E: Extractable>(&self, entities: impl IntoIterator<Item = E>) -> Vec<EntityId>;
-    pub fn remove_entity(&self, entity_id: &EntityId) -> Result<(), WorldError>;
-    pub fn try_remove_entities(&self, entity_ids: &[EntityId]) -> Result<(), WorldError>;
-    pub fn remove_entities(&self, entity_ids: &[EntityId]);
-    pub fn contains_entity(&self, entity_id: &EntityId) -> bool;
-    pub fn clear(&self);
-    pub fn extract_component<T: 'static>(&self, entity_id: &EntityId) 
-        -> Result<Acquirable<T>, WorldError>;
-    pub fn query<T: 'static>(&self) -> QueryIter<T>;
-    pub fn entity_count(&self) -> usize;
-    pub fn archetype_count(&self) -> usize;
-}
-```
-
-**重要:** すべてのメソッドが`&self`（共有参照）で動作。
+**重要:** すべてのメソッドが`&self`（共有参照）で動作します。
 
 ### 7. Type Index: クエリ最適化
 
@@ -322,69 +257,16 @@ impl World {
 type_index: DashMap<TypeId, FxHashSet<ArchetypeId>>
 ```
 
-**動作原理:**
-
-```rust
-// エンティティ追加時に更新
-world.add_entity(Player { ... });
-  ↓
-// Playerが持つすべての型に対してインデックス更新
-type_index.entry(TypeId::of::<Player>()).or_default().push(archetype_id);
-type_index.entry(TypeId::of::<Entity>()).or_default().push(archetype_id);
-type_index.entry(TypeId::of::<String>()).or_default().push(archetype_id);
-// ... (Playerが持つすべての抽出可能な型)
-
-// クエリ実行時に活用
-world.query::<Health>();
-  ↓
-// Type Indexで直接該当アーキタイプ集合を取得
-let archetype_ids: FxHashSet<ArchetypeId> = type_index.get(&TypeId::of::<Health>()).cloned().unwrap_or_default();
-for archetype_id in &archetype_ids {
-    if let Some(archetype) = archetypes.get(archetype_id) {
-        // ...
-    }
-}
-```
+エンティティ追加時に、その型が持つすべての抽出可能な型についてインデックスを更新します。クエリ実行時には、Type Indexを使って該当するアーキタイプのみを直接取得できます。
 
 **パフォーマンス向上:**
 
 - アーキタイプ数が多い場合（100+）に特に効果的
 - クエリ時間を O(N) → O(M) に削減（N = 全アーキタイプ数、M = 該当アーキタイプ数）
-- メモリオーバーヘッドは最小限（各型につき小さなVec）
-
-**実装例:**
-
-```rust
-impl World {
-    pub fn query<T: 'static>(&self) -> QueryIter<T> {
-        let type_id = TypeId::of::<T>();
-        
-        // Type Indexから該当アーキタイプのみを取得
-        let archetype_ids: FxHashSet<ArchetypeId> = self.type_index.get(&type_id).map(|ids| ids.clone()).unwrap_or_default();
-        
-        // イテレータを構築
-        let mut matching = Vec::new();
-        
-        for arch_id in archetype_ids {
-            if let Some(archetype) = self.archetypes.get(&arch_id) {
-                // 安全: Type Indexにより T を含むアーキタイプのみ
-                let offset = archetype.extractor.offsets.get(&type_id).copied().unwrap();
-                matching.push((offset, archetype.entities.clone()));
-            }
-        }
-        
-        QueryIter {
-            _phantom: std::marker::PhantomData,
-            matching,
-            current: None,
-        }
-    }
-}
-```
 
 ### 8. QueryIter: 遅延評価イテレータ
 
-**QueryIter**は、`query()`とは異なり、エンティティを遅延的（オンデマンド）にイテレートする機能を提供します。
+**QueryIter**は、エンティティを遅延的（オンデマンド）にイテレートする機能を提供します。
 
 ```rust
 pub struct QueryIter<T: 'static> {
@@ -394,9 +276,7 @@ pub struct QueryIter<T: 'static> {
 }
 ```
 
-**query():**
-
-`query()`は`QueryIter<T>`を返す遅延評価イテレータです。
+**query()の特性:**
 
 | 特性 | `query()` |
 |------|-----------|
@@ -406,72 +286,11 @@ pub struct QueryIter<T: 'static> {
 | 大量クエリ | メモリ効率的 |
 | 早期終了 | 即座に終了可能 |
 
-**使用例:**
-
-```rust
-// query(): 遅延評価でPlayerを取得（メモリ効率的）
-for (id, player) in world.query::<Player>() {
-    if player.name == "Hero" {
-        break;  // 即座に終了、残りは未確保
-    }
-}
-```
-
-**動作原理:**
-
-```rust
-impl<T: Extractable> Iterator for QueryIter<T> {
-    type Item = (EntityId, Acquirable<T>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // 現在のアーキタイプのイテレータから次の要素を取得
-            if let Some((offset, current_iter)) = &mut self.current {
-                if let Some(entry) = current_iter.next() {
-                    let entity_id = *entry.key();
-                    let entity_data = entry.value();
-                    // SAFETY: オフセットは事前計算済み
-                    return Some((entity_id, unsafe { 
-                        entity_data.extract_by_offset(*offset) 
-                    }));
-                } else {
-                    self.current = None;  // 次のアーキタイプへ
-                }
-            } else if let Some((offset, next_map)) = self.matching.pop() {
-                // 次のアーキタイプのイテレータを取得
-                let iter = next_map.iter();
-                // SAFETY: Arcで保持しているため、ライフタイムは安全
-                let iter = unsafe { 
-                    std::mem::transmute::<DashMapIter<'_>, DashMapIter<'static>>(iter) 
-                };
-                self.current = Some((offset, iter));
-            } else {
-                return None;  // すべて消費済み
-            }
-        }
-    }
-}
-```
-
-**メモリ効率性:**
-
-```rust
-// シナリオ: 10,000体のPlayerから1体を検索
-
-// query(): 効率的
-for (id, player) in world.query::<Player>() {
-    if player.level > 100 {
-        break;  // 必要な分だけ確保して即座に終了
-    }
-}
-```
-
-**イテレータの特性:**
+**メリット:**
 
 - ✅ 遅延評価: エンティティは`Iterator::next()`呼び出し時に取得される
 - ✅ 早期終了: `break`で即座にイテレーションを終了できる
 - ✅ メモリ効率: 必要なエンティティのみをオンデマンドで確保
-- ✅ 大規模クエリ: 数万〜数十万エンティティでもメモリ使用量は最小限
 
 ### 9. ComponentHandler: ポリモーフィック動作
 
@@ -484,121 +303,9 @@ pub struct ComponentHandler<Base: Extractable, Args = (), Return = ()> {
 }
 ```
 
-**目的:**
+従来のECSでは、基底型（`Entity`）でクエリしながら実際の型（`Player`、`Zombie`など）に応じた異なる処理を実行することが困難でした。`ComponentHandler`はこれを可能にします。
 
-従来のECSでは、`Entity`型でクエリしながら実際の型（`Player`、`Zombie`など）に応じた異なる処理を実行することが困難でした。`ComponentHandler`はこれを可能にします。
-
-**使用例:**
-
-```rust
-#[derive(Extractable)]
-pub struct Entity {
-    pub name: String,
-}
-
-#[derive(Extractable)]
-#[extractable(entity)]  // ← Entityを抽出可能にする
-pub struct Player {
-    pub entity: Entity,
-    pub level: u32,
-}
-
-#[derive(Extractable)]
-#[extractable(entity)]
-pub struct Zombie {
-    pub entity: Entity,
-    pub health: u32,
-}
-
-// Player用のハンドラ
-let player_handler = ComponentHandler::<Entity>::for_type::<Player>(|player, ()| {
-    println!("Player {} died!", player.entity.name);
-});
-
-// Zombie用のハンドラ
-let zombie_handler = ComponentHandler::<Entity>::for_type::<Zombie>(|zombie, ()| {
-    println!("Zombie {} was killed!", zombie.entity.name);
-});
-
-// Entityでクエリして、実際の型に応じた処理を実行
-for (id, entity) in world.query::<Entity>() {
-    // 実行時に適切なハンドラを選択
-    if let Ok(player) = world.extract_component::<Player>(&id) {
-        player_handler.call(&player, ());
-    } else if let Ok(zombie) = world.extract_component::<Zombie>(&id) {
-        zombie_handler.call(&zombie, ());
-    }
-}
-```
-
-**型安全性の保証:**
-
-`ComponentHandler`はデバッグビルドで型関係を検証します：
-
-```rust
-#[cfg(debug_assertions)]
-fn validate_type_relationship<Concrete: Extractable>() {
-    if !can_extract::<Concrete, Base>() {
-        panic!(
-            "The concrete type must contain the base type in its \
-             extraction metadata. Did you forget #[extractable(...)]?"
-        );
-    }
-}
-```
-
-**動作原理:**
-
-1. **型消去（Type Erasure）**: 具体的な関数を`Box<dyn Fn>`に変換
-2. **実行時抽出**: `EntityData`から動的に`Concrete`型を抽出
-3. **型安全検証**: デバッグビルドで型関係を事前検証
-
-```rust
-struct TypeErasedFn<Args, Return> {
-    caller: Box<dyn Fn(EntityData, Args) -> Return + Send + Sync>,
-}
-
-impl<Args, Return> TypeErasedFn<Args, Return> {
-    pub fn new<Base, Concrete>(
-        func: impl Fn(&Acquirable<Concrete>, Args) -> Return + Send + Sync + 'static,
-    ) -> Self {
-        let caller = move |data: EntityData, args: Args| -> Return {
-            // SAFETY: デバッグビルドで検証済み
-            let entity = data.extract::<Concrete>()
-                .expect("Handler type mismatch");
-            func(&entity, args)
-        };
-        
-        Self { caller: Box::new(caller) }
-    }
-}
-```
-
-**実用例: ダメージシステム**
-
-```rust
-// 汎用的なダメージハンドラを定義
-type DamageHandler = ComponentHandler<Entity, u32, ()>;
-
-let player_damage = DamageHandler::for_type::<Player>(|player, damage| {
-    let new_health = player.health.saturating_sub(damage);
-    println!("Player took {} damage! Health: {}", damage, new_health);
-});
-
-let zombie_damage = DamageHandler::for_type::<Zombie>(|zombie, damage| {
-    let new_health = zombie.health.saturating_sub(damage);
-    println!("Zombie took {} damage! Health: {}", damage, new_health);
-});
-
-// すべてのエンティティにダメージを適用
-for (id, entity) in world.query::<Entity>() {
-    if let Ok(player) = world.extract_component::<Player>(&id) {
-        player_damage.call(&player, 10);
-    } else if let Ok(zombie) = world.extract_component::<Zombie>(&id) {
-        zombie_damage.call(&zombie, 5);
-    }
-}
-```
+> **詳細な使用例**: `examples/handler.rs` を参照してください。
 
 **メリット:**
 
@@ -621,12 +328,13 @@ for (id, entity) in world.query::<Entity>() {
            ↓
 World::add_entity():
   1. AtomicU32でEntityId生成（ロックフリー）
-  2. Extractorを取得またはキャッシュから取得（DashMap）
+  2. グローバルキャッシュからExtractorを取得（&'static）
   3. EntityDataをBox確保してポインタ化
   4. ArchetypeIdを計算（TypeId）
   5. Archetypeを取得または作成（DashMap）
-  6. Archetype.write().add_entity() （細粒度ロック）
+  6. Archetype内のDashMapにエンティティ追加
   7. entity_indexに登録（DashMap）
+  8. type_indexを更新（該当する全TypeIdに対して）
            ↓
 結果: EntityId返却
 ```
@@ -665,172 +373,27 @@ World::query():
 - メモリ使用量が最小限（必要なエンティティのみ確保）
 - 早期終了が可能（`break`で即座に終了）
 - クエリ中に他のスレッドがエンティティ追加可能
-- クエリ同士も並列実行可能
 - デッドロックのリスクゼロ
 
-### 3. バッチ削除フロー
+### 3. バッチ削除
 
 structecsは2つのバッチ削除メソッドを提供しています：
 
 #### `remove_entities()` - サイレント削除
 
-```rust
-pub fn remove_entities(&self, entity_ids: &[EntityId])
-```
-
-**特性:**
-
-- ✅ 存在しないエンティティを**無視**する
-- ✅ エラーを返さない（`void`）
-- ✅ 削除失敗を気にしない場合に使用
-
-**実装フロー:**
-
-```
-ユーザーコード:
-  world.remove_entities(&[id1, id2, id3])
-           ↓
-World::remove_entities():
-  1. entity_idsをアーキタイプごとにグループ化（FxHashMap）
-     - 存在しないIDは無視（entity_indexに存在チェック）
-  2. 各アーキタイプに対して:
-     - Archetype.remove_entity()を呼び出し
-     - 削除失敗を無視（let _ = ...）
-  3. entity_indexから削除（存在するもののみ）
-```
-
-**コード例:**
-
-```rust
-// 実装（簡略版）
-pub fn remove_entities(&self, entity_ids: &[EntityId]) {
-    let mut archetype_groups: FxHashMap<ArchetypeId, Vec<EntityId>> = FxHashMap::default();
-    
-    for entity_id in entity_ids {
-        if let Some((_, archetype_id)) = self.entity_index.remove(entity_id) {
-            archetype_groups
-                .entry(archetype_id)
-                .or_default()
-                .push(*entity_id);
-        }
-        // 存在しないエンティティは無視
-    }
-    
-    for (archetype_id, entities) in archetype_groups {
-        if let Some(archetype) = self.archetypes.get(&archetype_id) {
-            for entity_id in entities {
-                let _ = archetype.remove_entity(&entity_id);  // エラーを無視
-            }
-        }
-    }
-}
-```
-
-**使用例:**
-
-```rust
-// クリーンアップ処理（削除失敗を気にしない）
-let dead_entities = vec![id1, id2, id3];
-world.remove_entities(&dead_entities);  // 既に削除済みでもOK
-```
+存在しないエンティティを**無視**し、エラーを返しません。クリーンアップ処理など、削除失敗を気にしない場合に使用します。
 
 #### `try_remove_entities()` - エラートラッキング削除
 
-```rust
-pub fn try_remove_entities(&self, entity_ids: &[EntityId]) -> Result<(), WorldError>
-```
+存在しないエンティティを**検出**し、`WorldError::PartialRemoval`でエラー情報を返します。削除失敗を追跡する必要がある場合に使用します。
 
-**特性:**
-
-- ✅ 存在しないエンティティを**検出**する
-- ✅ エラー情報を返す（`Result`）
-- ✅ 削除失敗を追跡する必要がある場合に使用
-
-**実装フロー:**
-
-```
-ユーザーコード:
-  world.try_remove_entities(&[id1, id2, id3])?
-           ↓
-World::try_remove_entities():
-  1. entity_idsをアーキタイプごとにグループ化（FxHashMap）
-     - 存在しないIDを`not_found`ベクタに記録
-  2. 各アーキタイプに対して:
-     - Archetype.remove_entity()を呼び出し
-     - 削除失敗を記録
-  3. entity_indexから削除
-  4. エラーがあれば`WorldError::PartialRemoval`を返却
-```
-
-**コード例:**
-
-```rust
-// 実装（簡略版）
-pub fn try_remove_entities(&self, entity_ids: &[EntityId]) -> Result<(), WorldError> {
-    let mut archetype_groups: FxHashMap<ArchetypeId, Vec<EntityId>> = FxHashMap::default();
-    let mut not_found = Vec::new();
-    
-    for entity_id in entity_ids {
-        if let Some((_, archetype_id)) = self.entity_index.remove(entity_id) {
-            archetype_groups
-                .entry(archetype_id)
-                .or_default()
-                .push(*entity_id);
-        } else {
-            not_found.push(*entity_id);  // 記録する
-        }
-    }
-    
-    let mut removed = Vec::new();
-    let mut failed = not_found;
-    
-    for (archetype_id, entities) in archetype_groups {
-        if let Some(archetype) = self.archetypes.get(&archetype_id) {
-            for entity_id in entities {
-                match archetype.remove_entity(&entity_id) {
-                    Ok(()) => removed.push(entity_id),
-                    Err(_) => failed.push(entity_id),  // 失敗を記録
-                }
-            }
-        }
-    }
-    
-    if !failed.is_empty() {
-        return Err(WorldError::PartialRemoval { removed, failed });
-    }
-    Ok(())
-}
-```
-
-**使用例:**
-
-```rust
-// 厳密な削除処理（失敗を検出したい）
-match world.try_remove_entities(&entity_ids) {
-    Ok(()) => println!("すべて削除成功"),
-    Err(WorldError::PartialRemoval { removed, failed }) => {
-        println!("削除成功: {:?}", removed);
-        println!("削除失敗: {:?}", failed);
-        // エラーハンドリング...
-    }
-    Err(e) => eprintln!("エラー: {:?}", e),
-}
-```
-
-#### パフォーマンス比較
+**パフォーマンス比較:**
 
 | 操作 | `remove_entity()` × N | `remove_entities()` | `try_remove_entities()` |
 |------|----------------------|---------------------|------------------------|
 | ロック回数 | N回 | アーキタイプ数回 | アーキタイプ数回 |
 | エラー追跡 | ❌ | ❌ | ✅ |
 | オーバーヘッド | 高 | 低 | 中（エラー記録） |
-| 使用例 | 単一削除 | 大量削除（エラー無視） | 大量削除（エラー検出） |
-
-**効率性:**
-
-- アーキタイプごとに1回のロック（個別削除はN回ロック）
-- FxHashMap使用で高速グループ化
-- エンティティ数が多いほど効率向上
 
 **ベストプラクティス:**
 
@@ -842,10 +405,9 @@ for id in entity_ids {
 
 // ✅ 効率的
 world.remove_entities(&entity_ids);  // アーキタイプごとに1回のロック
-
-// ✅ エラー検出が必要な場合
-world.try_remove_entities(&entity_ids)?;
 ```
+
+> **詳細な使用例**: `examples/batch_operations.rs` を参照してください。
 
 ---
 
@@ -859,7 +421,7 @@ world.try_remove_entities(&entity_ids)?;
 Level 1: World構造体自体
   → ロックなし（すべて &self API）
 
-Level 2: DashMap（archetypes, extractors, entity_index）
+Level 2: DashMap（archetypes, entity_index, type_index）
   → 内部シャーディング、ロックフリー読み取り
 
 Level 3: Archetype
@@ -881,7 +443,7 @@ world.add_entity(Player { ... });  // Player archetype をロック
 world.add_entity(Monster { ... }); // Monster archetype をロック
 
 // スレッド3（同時実行）
-world.query::<Item>();             // Item archetype を読み取りロック
+world.query::<Item>();             // Item archetype を読み取り
 ```
 
 **ロック競合:** なし
@@ -899,24 +461,18 @@ for (id, player) in world.query::<Player>() {
 
 #### パターン3: 同一アーキタイプへの書き込み（直列化）
 
-```rust
-// スレッド1
-world.add_entity(Player { ... });
-// Player archetype の write() ロック取得
-
-// スレッド2（待機）
-world.add_entity(Player { ... });
-// スレッド1のロック解放待ち
-```
+同じアーキタイプへの追加は、Archetype内部のDashMapによって短時間だけ直列化されます。
 
 **ロック競合:** あり（必要最小限、add_entity内部のみ）
 
 ### スレッドセーフティ保証
 
 1. **データ競合の防止:** すべての共有状態は`Sync`型
-2. **use-after-freeの防止:** `Acquirable`による参照カウント
+2. **use-after-freeの防止:** `Acquirable`による参照カウント（Arc）
 3. **デッドロックの防止:** ロック順序の一貫性、遅延評価による短時間ロック
 4. **メモリ安全性:** `T`の`Send`/`Sync`を尊重
+
+> **並行処理の例**: `examples/concurrent.rs` を参照してください。
 
 ---
 
@@ -934,58 +490,48 @@ let ptr = Box::into_raw(Box::new(entity)) as *mut u8;
 - ポインタ化して`NonNull<u8>`で保持
 - 型消去（type erasure）だが、Extractorが型情報を保持
 
-**2. 参照カウンタ:**
+**2. Extractor:**
 
 ```rust
-let counter = Box::leak(Box::new(AtomicUsize::new(1))).into();
+pub(crate) extractor: &'static Extractor
 ```
 
-- ヒープ確保（独立したBox）
-- `leak`して寿命管理を手動化
-- すべての`Acquirable`で共有
+- グローバルキャッシュに`&'static`として保存
+- `inventory` crateを使ってコンパイル時に登録
+- 各型につき1つのExtractorを共有（メモリ効率的）
 
-**3. Archetype:**
+**3. EntityData:**
 
 ```rust
-pub(crate) entities: Vec<(EntityId, EntityData)>,
+pub struct EntityData {
+    inner: Arc<EntityDataInner>,
+}
 ```
 
-- 動的拡張（capacity倍増戦略）
+- Arc（参照カウント）でライフタイム管理
+- クローン時は参照カウントのみ増加（軽量）
 
 ### メモリ解放
 
 **参照カウントによる遅延解放:**
 
-```rust
-impl Drop for EntityData {
-    fn drop(&mut self) {
-        if self.counter.fetch_sub(1, Ordering::Release) > 1 {
-            return;  // まだ他にAcquirableが存在
-        }
-        // 最後の参照がドロップされた
-        unsafe { (self.extractor.dropper)(self.data) };
-        unsafe { drop(Box::from_raw(self.counter.as_ptr())) };
-    }
-}
-```
-
-エンティティ削除時も`Acquirable`が生きていればデータは保持されます。
+`EntityData`は`Arc<EntityDataInner>`でラップされているため、エンティティ削除時も`Acquirable`が生きていればデータは保持されます。最後の参照がドロップされた時点で、Extractorの`dropper`関数が呼ばれて安全にメモリが解放されます。
 
 ### メモリレイアウト最適化
 
 ```rust
 #[repr(C)]
 pub(crate) struct EntityDataInner {
-    pub(crate) counter: AtomicUsize,  // 8 bytes
-    pub(crate) data: NonNull<u8>,     // 8 bytes
-    pub(crate) extractor: Arc<Extractor>,  // 8 bytes
+    pub(crate) data: NonNull<u8>,           // 8 bytes
+    pub(crate) extractor: &'static Extractor,  // 8 bytes
 }
 ```
 
 **メモリ効率:**
 
-- **総サイズ**: 24 bytes (padding: 0 bytes)
+- **総サイズ**: 16 bytes (Arc のオーバーヘッド除く)
 - **アライメント**: 8 bytes
+- 前バージョン（`Arc<Extractor>`）から約33%削減（24 bytes → 16 bytes）
 
 ---
 
@@ -1061,7 +607,7 @@ structecsの独自機能である階層的コンポーネントのクエリ性�
 ### 最適化のポイント
 
 1. **アーキタイプベースストレージ** - 同じ型のエンティティは連続配置
-2. **Extractorキャッシング** - 各型につき1つのExtractor（共有）
+2. **Extractorキャッシング** - 各型につき1つのExtractor（`&'static`で共有）
 3. **遅延評価イテレータ** - 必要なエンティティのみをオンデマンドで確保
 4. **短時間ロック** - エンティティ取得時のみロック、即座に解放
 5. **細粒度ロック** - アーキタイプ単位の並行処理
@@ -1104,6 +650,8 @@ let player = world.extract_component::<Mutex<PlayerState>>(&id)?;
 let mut state = player.lock().unwrap();
 ```
 
+これにより、ユーザーは自分のユースケースに最適なロック戦略（Atomic、Mutex、RwLockなど）を選択できます。
+
 ### 2. 遅延評価イテレータ
 
 **判断:** クエリは**遅延評価イテレータ**を返す。
@@ -1130,13 +678,15 @@ let mut state = player.lock().unwrap();
 - `Option`で失敗可能
 - 型ミスがコンパイル時に検出されない
 
+ただし、`ComponentHandler`はデバッグビルドで型関係を検証するため、開発時に型ミスを検出できます。
+
 ### 4. Archetype変更の非サポート
 
 **現状:** エンティティ追加後、構造変更不可。
 
 **理由:**
 
-- **ポインタ無効化** - アーキタイプ移動でAcquirableが無効化
+- **ポインタ無効化** - アーキタイプ移動で`Acquirable`が無効化
 - **実装複雑性** - 世代番号管理が必要
 
 **現在の回避策:**
@@ -1155,14 +705,16 @@ struct Player {
 **使用箇所:**
 
 1. ポインタ演算（extractor.rs）
-2. 参照カウント操作（entity.rs）
-3. 型消去とドロップ（entity.rs）
+2. 型消去とドロップ（entity.rs）
+3. イテレータライフタイム操作（query.rs）
 
 **安全性の保証:**
 
-- ✅ **オフセット計算**: コンパイル時`offset_of!`で検証済み
-- ✅ **参照カウント**: Arc パターンを手動実装（well-tested）
+- ✅ **オフセット計算**: コンパイル時メタデータで検証済み
+- ✅ **参照カウント**: Arc パターンを使用（標準ライブラリと同等）
 - ✅ **ドロップ**: Extractor生成時に型情報保持
+
+すべての`unsafe`コードは、コメントで安全性の根拠を明示しており、包括的なテストスイート（`tests/`ディレクトリ）で検証されています。
 
 ---
 
@@ -1191,6 +743,13 @@ structecsは、**階層的データ構造**と**高並行性**を両立させる
 - ❌ 既存ECSエコシステムに依存
 - ❌ 完全なコンパイル時型安全性が必須
 
+### 次のステップ
+
+- **クイックスタート**: [README.md](README.md) を参照
+- **API詳細**: `cargo doc --open` でローカルドキュメントを生成
+- **実装例**: `examples/` ディレクトリのサンプルコードを確認
+- **テスト**: `cargo test --all` で包括的なテストを実行
+
 ---
 
-*このドキュメントは、structecsの設計思想・実装詳細を説明しています。詳細なテスト情報は`cargo test`で確認してください。*
+*このドキュメントは、structecsの設計思想と実装の概要を説明しています。詳細な実装情報やAPI仕様は、ソースコードおよび `cargo doc` で生成されるドキュメントを参照してください。*

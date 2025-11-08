@@ -31,6 +31,8 @@ Unlike conventional ECS frameworks (Bevy, specs, hecs), structecs:
 - ✅ **Zero-cost abstractions** - Uses compile-time offsets for component access
 - ✅ **Thread-safe** - Concurrent operations via lock-free maps + short locks
 
+---
+
 ## Quick Start
 
 ```rust
@@ -76,18 +78,8 @@ fn main() {
         }
     }
 
-
-    // Batch remove entities efficiently (silent, no error tracking)
-    let ids_to_remove = vec![player_id /* ... */];
-    world.remove_entities(&ids_to_remove);
-
-    // Check entity existence
-    if world.contains_entity(&player_id) {
-        println!("Player still exists");
-    }
-
-    // Clear all entities
-    world.clear();
+    // Remove entities
+    world.remove_entity(&player_id);
 }
 ```
 
@@ -110,188 +102,149 @@ fn main() {
 
 ## Core Concepts
 
-### 1. Entity
+### Hierarchical Components
 
-An `Entity` is just an ID - a lightweight handle to your data.
-
-```rust
-pub struct EntityId {
-    id: u32,
-}
-
-impl EntityId {
-    pub fn from_raw(id: u32) -> Self;  // Create from raw u32
-}
-
-// EntityId implements Display: "Entity(123)"
-println!("{}", entity_id);
-```
-
-Entities don't "own" components. Instead, they reference structured data stored in the `World`.
-
-### 2. Component (via Extractable)
-
-In structecs, components are **fields within structs**. The `Extractable` trait allows the framework to understand your data structure and extract specific types.
+The key innovation of structecs is **hierarchical components with flat access**:
 
 ```rust
-use structecs::*;
-
-#[derive(Debug, Extractable)]
+#[derive(Extractable)]
 pub struct Entity {
     pub name: String,
 }
 
-#[derive(Debug, Extractable)]
-#[extractable(entity)]
-pub struct Player {
+#[derive(Extractable)]
+#[extractable(entity)]  // Mark Entity as extractable
+pub struct LivingEntity {
     pub entity: Entity,
     pub health: u32,
 }
+
+#[derive(Extractable)]
+#[extractable(living)]  // Mark LivingEntity as extractable
+pub struct Player {
+    pub living: LivingEntity,
+    pub inventory: Inventory,
+}
+
+// Query any level of the hierarchy
+for (id, entity) in world.query::<Entity>() { /* ... */ }
+for (id, living) in world.query::<LivingEntity>() { /* ... */ }
+for (id, player) in world.query::<Player>() { /* ... */ }
 ```
 
-**Key insight:** Components are hierarchical. A `Player` might contain an `Entity`, which itself is extractable.
+See `examples/` for more detailed usage patterns.
 
-### 3. World
+### Mutability Control
 
-The central data store that manages all entities and their data.
+structecs provides **read-only access** by default. Users control mutability explicitly using interior mutability:
+
+```rust
+use std::sync::{Mutex, RwLock};
+use std::sync::atomic::AtomicU32;
+
+#[derive(Extractable)]
+pub struct Player {
+    pub name: String,
+    pub health: AtomicU32,  // Lock-free concurrent updates
+}
+
+#[derive(Extractable)]
+pub struct Inventory {
+    pub items: Mutex<Vec<Item>>,  // Fine-grained locking
+}
+
+// Usage
+for (id, player) in world.query::<Player>() {
+    player.health.fetch_add(10, Ordering::Relaxed);
+}
+```
+
+**Why no `query_mut()`?**
+
+- Prevents lock contention on the entire World
+- Allows fine-grained control over locking strategy
+- Essential for high-concurrency scenarios
+
+See `examples/mutability.rs` for detailed patterns.
+
+---
+
+## API Overview
+
+### World
+
+The central data store that manages all entities.
 
 ```rust
 let world = World::default();
 
 // Add entities
-let player_id = world.add_entity(Player {
-    entity: Entity {
-        name: "Hero".to_string(),
-    },
-    health: 100,
-});
+let id = world.add_entity(Player { /* ... */ });
+let (id, player) = world.add_entity_with_acquirable(Player { /* ... */ });
+let ids = world.add_entities(vec![player1, player2, player3]);
 
 // Query entities
-for (id, player) in world.query::<Player>() {
-    println!("[{}] {}: {} HP", id, player.entity.name, player.health);
-}
+for (id, player) in world.query::<Player>() { /* ... */ }
 
-// Batch operations
-let ids = vec![id1, id2, id3];
-world.remove_entities(&ids);  // Efficient batch removal (silent)
+// Extract components
+let health = world.extract_component::<Health>(&entity_id)?;
 
-// Check existence
-if world.contains_entity(&player_id) {
-    world.remove_entity(&player_id);
-}
+// Remove entities
+world.remove_entity(&entity_id)?;                    // Single removal
+world.remove_entities(&[id1, id2, id3]);             // Batch removal (silent)
+world.try_remove_entities(&[id1, id2, id3])?;        // Batch removal (error tracking)
+
+// Utilities
+world.contains_entity(&entity_id);
+world.entity_count();
+world.archetype_count();
+world.clear();
 ```
 
-**Core operations:**
+> **Full API documentation**: Run `cargo doc --open` to view detailed API docs.
 
-- `add_entity<E: Extractable>(entity: E) -> EntityId` - Register new entity
-- `add_entity_with_acquirable<E: Extractable>(entity: E) -> (EntityId, Acquirable<E>)` - Add entity and get reference
-- `add_entities<E: Extractable>(entities: impl IntoIterator<Item = E>) -> Vec<EntityId>` - Bulk add entities (optimized)
-- `remove_entity(entity_id: &EntityId) -> Result<(), WorldError>` - Remove single entity from world
-- `try_remove_entities(entity_ids: &[EntityId]) -> Result<(), WorldError>` - Batch remove entities with error tracking
-- `remove_entities(entity_ids: &[EntityId])` - Fast batch removal (silently skips not found)
-- `contains_entity(entity_id: &EntityId) -> bool` - Check if entity exists in world
-- `clear()` - Remove all entities from world
-- `query<T: 'static>() -> QueryIter<T>` - Lazy iterator over entities with component T
-- `extract_component<T>(entity_id: &EntityId) -> Result<Acquirable<T>, WorldError>` - Get specific component
-- `entity_count() -> usize` - Get total number of entities
-- `archetype_count() -> usize` - Get number of archetypes
-
-### 4. Acquirable
-
-A smart reference to a component that keeps the underlying entity data alive.
-
-```rust
-pub struct Acquirable<T: 'static> {
-    target: NonNull<T>,
-    inner: EntityData,
-}
-```
-
-**Features:**
-
-- Implements `Deref<Target = T>` for transparent access
-- Reference-counted to prevent use-after-free
-- Can `extract()` other component types from the same entity
-
-This enables OOP-like method chaining:
-
-```rust
-entity.extract::<Player>()?.extract::<Health>()?
-```
-
-### 5. Extractor
-
-The engine that performs type extraction using pre-computed offsets.
-
-```rust
-pub struct Extractor {
-    offsets: FxHashMap<TypeId, usize>,
-    dropper: unsafe fn(NonNull<u8>),
-}
-```
-
-Each unique entity structure gets one `Extractor` (cached in `World`), which knows:
-
-- Where each component type lives in memory (offset)
-- How to safely drop the entity when done
-
----
-
-## Error Handling
-
-structecs provides a comprehensive error type for handling failures:
+### Error Handling
 
 ```rust
 pub enum WorldError {
-    /// The specified entity was not found in the world
     EntityNotFound(EntityId),
-    
-    /// The requested component type was not found on the entity
-    ComponentNotFound {
-        entity_id: EntityId,
-        component_name: &'static str,
-    },
-    
-    /// Batch removal completed with some failures
-    /// Contains successfully removed and failed entity IDs
-    PartialRemoval {
-        succeeded: Vec<EntityId>,
-        failed: Vec<EntityId>,
-    },
-    
-    /// Internal consistency error (should not occur in normal use)
+    ComponentNotFound { entity_id: EntityId, component_name: &'static str },
+    PartialRemoval { succeeded: Vec<EntityId>, failed: Vec<EntityId> },
     ArchetypeNotFound(EntityId),
 }
 ```
 
-**Error handling examples:**
+Example:
 
 ```rust
-// Single entity removal with error handling
-match world.remove_entity(&entity_id) {
-    Ok(()) => println!("Entity removed"),
-    Err(WorldError::EntityNotFound(id)) => println!("Entity {} not found", id),
-    Err(e) => println!("Error: {}", e),
-}
-
-// Batch removal with error tracking
 match world.try_remove_entities(&entity_ids) {
-    Ok(()) => println!("All entities removed"),
+    Ok(()) => println!("All removed"),
     Err(WorldError::PartialRemoval { succeeded, failed }) => {
-        println!("Removed: {}, Failed: {}", succeeded.len(), failed.len());
+        println!("Removed: {:?}, Failed: {:?}", succeeded, failed);
     }
-    Err(e) => println!("Error: {}", e),
+    Err(e) => eprintln!("Error: {}", e),
 }
+```
 
-// Component extraction with error handling
-match world.extract_component::<Health>(&entity_id) {
-    Ok(health) => println!("Health: {}", health.value),
-    Err(WorldError::EntityNotFound(id)) => println!("Entity not found"),
-    Err(WorldError::ComponentNotFound { entity_id, component_name }) => {
-        println!("Component {} not found on entity {}", component_name, entity_id);
-    }
-    Err(e) => println!("Error: {}", e),
-}
+---
+
+## Examples
+
+The `examples/` directory contains practical usage patterns:
+
+- **`examples/normal.rs`** - Basic usage and entity management
+- **`examples/concurrent.rs`** - Multi-threaded operations
+- **`examples/handler.rs`** - Polymorphic behavior with ComponentHandler
+- **`examples/hierarchical.rs`** - Hierarchical component queries *(coming soon)*
+- **`examples/mutability.rs`** - Interior mutability patterns *(coming soon)*
+- **`examples/batch_operations.rs`** - Efficient batch operations *(coming soon)*
+
+Run examples:
+
+```bash
+cargo run --example normal
+cargo run --example concurrent
+cargo run --example handler
 ```
 
 ---
@@ -299,64 +252,6 @@ match world.extract_component::<Health>(&entity_id) {
 ## Architecture
 
 For detailed architecture documentation, see [Architecture.md](Architecture.md).
-
-### Memory Layout
-
-**Archetype-based Storage:**
-
-Entities with the same structure (type) are grouped into archetypes for better cache locality:
-
-```
-World:
-  Archetype<Player>:
-    [Entity 0] Player { entity: Entity { name: "A" }, health: 100 }
-    [Entity 1] Player { entity: Entity { name: "B" }, health: 80 }
-    [Entity 2] Player { entity: Entity { name: "C" }, health: 90 }
-  
-  Archetype<Monster>:
-    [Entity 3] Monster { entity: Entity { name: "X" }, damage: 20 }
-    [Entity 4] Monster { entity: Entity { name: "Y" }, damage: 30 }
-```
-
-**Component Extraction:**
-
-```
-Player struct in memory:
-┌─────────────────────────────┐
-│ Entity { name: String }     │ ← offset 0: Entity
-│  ├─ name: String            │ ← offset 0: String
-├─────────────────────────────┤
-│ health: u32                 │ ← offset X: u32
-└─────────────────────────────┘
-
-The Extractor knows:
-- TypeId(Entity) -> offset 0
-- TypeId(String) -> offset 0  (flattened from Entity)
-- TypeId(u32) -> offset X
-```
-
-### Data Flow
-
-1. **Entity Registration:**
-
-   ```
-   User creates struct → Derive macro generates METADATA_LIST
-   → add_entity() creates Extractor → Data stored in World
-   ```
-
-2. **Component Query:**
-
-   ```
-   query<T>() → Iterate all entities → Check if Extractor has TypeId(T)
-   → Calculate pointer via offset → Wrap in Acquirable
-   ```
-
-3. **Component Extraction:**
-
-   ```
-   Acquirable<A>.extract<B>() → Reuse same Extractor
-   → Get offset for TypeId(B) → Return new Acquirable<B>
-   ```
 
 ### Design Philosophy
 
@@ -370,55 +265,79 @@ This gives you:
 
 - **Expressiveness** of OOP (nested data, clear relationships)
 - **Flexibility** of procedural code (write systems however you want)
+- **Performance** of data-oriented design (archetype-based storage)
 
-### Mutability Design
+### Memory Layout
 
-structecs provides **read-only access** by default. Users control mutability explicitly using Rust's interior mutability patterns:
+Entities with the same structure are grouped into archetypes for better cache locality:
 
-```rust
-use std::sync::{Mutex, RwLock};
-use std::sync::atomic::AtomicU32;
-
-// Pattern 1: Lock-free with Atomics
-#[derive(Extractable)]
-pub struct Player {
-    pub name: String,
-    pub health: AtomicU32,  // Lock-free concurrent updates
-}
-
-// Pattern 2: Fine-grained locking with Mutex
-#[derive(Extractable)]
-pub struct Inventory {
-    pub items: Mutex<Vec<Item>>,  // Lock only when accessing items
-}
-
-// Pattern 3: Read/write separation with RwLock
-#[derive(Extractable)]
-pub struct Position {
-    pub coords: RwLock<Vec3>,  // Multiple readers, single writer
-}
-
-// Usage
-for (id, player) in world.query::<Player>() {
-    player.health.fetch_add(10, Ordering::Relaxed);
-}
+```
+World:
+  Archetype<Player>:
+    [Entity 0] Player { entity: Entity { ... }, health: 100 }
+    [Entity 1] Player { entity: Entity { ... }, health: 80 }
+  
+  Archetype<Monster>:
+    [Entity 3] Monster { entity: Entity { ... }, damage: 20 }
 ```
 
-**Why no `query_mut()`?**
+Component extraction uses pre-computed offsets for zero-cost access.
 
-- **Prevents lock contention**: Locking the entire World would block all operations
-- **Fine-grained control**: Users choose the optimal locking strategy per component
-- **Multi-threading first**: Essential for high-concurrency scenarios like game servers
+### Concurrency Model
 
-This design philosophy prioritizes flexibility and performance in concurrent environments.
+structecs uses a hierarchical lock-free design:
+
+1. **World**: All operations use `&self` (no locks)
+2. **DashMap**: Lock-free reads, fine-grained write locks
+3. **Archetype**: Concurrent access via DashMap
+4. **Components**: User-controlled (Atomic, Mutex, RwLock)
+
+This enables high concurrency with minimal lock contention.
+
+---
+
+## Performance
+
+Benchmark results (10,000 entities, Release mode):
+
+| Operation | bevy_ecs | hecs | specs | **structecs** |
+|-----------|----------|------|-------|---------------|
+| Add entities | 707µs | **578µs** | 890µs | 958µs (1.66x) |
+| Query all | **5.5µs** | 19µs | 16µs | 74µs (13.5x) |
+| Query 2 components | **4.1µs** | 4.9µs | 14µs | 76µs (18.3x) |
+
+**Trade-offs:**
+
+- ✅ Competitive entity addition performance
+- ✅ Unique hierarchical component feature
+- ⚠️ Slower queries due to dynamic type extraction and flexibility
+
+**Use structecs when:**
+
+- Hierarchical entity structures are essential
+- Query performance is not the primary bottleneck
+- Flexibility and expressiveness matter more than raw speed
+
+**Use bevy_ecs/hecs when:**
+
+- Maximum query performance is critical
+- Traditional flat ECS patterns suffice
+- Processing millions of entities per frame
 
 ---
 
 ## Testing
 
-structecs has a comprehensive test suite:
+structecs has a comprehensive test suite covering:
 
-**Run tests:**
+- Integration tests
+- Concurrent operations
+- Memory safety
+- Edge cases
+- Drop order verification
+- Reference counting
+
+Run tests:
 
 ```bash
 # Run all tests
@@ -428,7 +347,6 @@ cargo test --all
 cargo test --test integration_test
 cargo test --test concurrent_test
 cargo test --test memory_safety_test
-cargo test --test edge_cases_test
 ```
 
 ---
@@ -439,11 +357,10 @@ cargo test --test edge_cases_test
 |--------|----------------|-----------|
 | **Entity** | Opaque ID | Opaque ID ✓ |
 | **Component** | Standalone data types | Fields in structs |
-| **System** | First-class concept with scheduling | User implements freely |
+| **System** | First-class with scheduling | User implements freely |
 | **Data Layout** | Archetype/sparse sets | Archetype-based ✓ |
-| **Query Pattern** | Compile-time system parameters | Runtime extraction |
+| **Query** | Compile-time parameters | Runtime extraction |
 | **Nesting** | Components are flat | Components can nest ✓ |
-| **Cache Coherency** | Excellent (packed arrays) | Good (archetype storage) |
 | **Flexibility** | Constrained by System API | Maximum flexibility ✓ |
 
 ---
@@ -460,14 +377,23 @@ structecs bridges the gap: data-oriented storage with OOP-like access patterns.
 
 ---
 
+## Resources
+
+- **[Architecture Documentation](Architecture.md)** - Design philosophy and implementation details
+- **[API Documentation](https://docs.rs/structecs)** - Full API reference
+- **[Examples](examples/)** - Practical usage patterns
+- **[Crates.io](https://crates.io/crates/structecs)** - Published versions
+
+---
+
 ## License
 
-Licensed under:
-
-- MIT License
+Licensed under MIT License.
 
 ---
 
 ## Contributing
 
 This project is in early development. Feedback, ideas, and contributions are welcome!
+
+If you have suggestions or find issues, please open an issue or pull request on GitHub.
