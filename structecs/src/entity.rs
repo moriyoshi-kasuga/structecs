@@ -1,35 +1,6 @@
 use std::{ptr::NonNull, sync::Arc};
 
-use crate::extractor::Extractor;
-
-/// Unique identifier for an entity in the World.
-#[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
-pub struct EntityId {
-    pub(crate) id: u32,
-}
-
-impl EntityId {
-    #[inline]
-    pub(crate) fn new(id: u32) -> Self {
-        Self { id }
-    }
-
-    /// Create an EntityId from a raw u32 value.
-    ///
-    /// # Safety
-    /// The caller must ensure that the provided `id` is valid and unique within the context
-    /// of the World. Using an invalid or duplicate ID may lead to undefined behavior.
-    #[inline]
-    pub fn from_raw(id: u32) -> Self {
-        Self { id }
-    }
-}
-
-impl std::fmt::Display for EntityId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Entity({})", self.id)
-    }
-}
+use crate::{Extractable, extractor::Extractor};
 
 #[repr(C)]
 pub(crate) struct EntityDataInner {
@@ -68,26 +39,21 @@ impl EntityData {
     }
 
     #[inline]
-    pub(crate) unsafe fn extract_by_offset<T: 'static>(
+    pub(crate) unsafe fn extract_by_offset<T: Extractable>(
         &self,
         offset: usize,
     ) -> crate::Acquirable<T> {
         // SAFETY: The caller guarantees that offset is valid for type T within the entity data.
         // The offset comes from the Extractor which validates it during creation.
         let extracted = unsafe { self.inner.data.add(offset).cast::<T>() };
-        crate::Acquirable::new(extracted, self.clone())
+        crate::Acquirable::new_raw(extracted, self.clone())
     }
 
     #[inline(always)]
-    pub(crate) fn data_ptr(&self) -> NonNull<u8> {
-        self.inner.data
-    }
-
-    #[inline(always)]
-    pub(crate) fn extract<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
+    pub(crate) fn extract<T: Extractable>(&self) -> Option<crate::Acquirable<T>> {
         // SAFETY: extract_ptr validates the type through the Extractor
         let extracted = unsafe { self.extract_ptr::<T>()? };
-        Some(crate::Acquirable::new(extracted, self.clone()))
+        Some(crate::Acquirable::new_raw(extracted, self.clone()))
     }
 
     #[inline(always)]

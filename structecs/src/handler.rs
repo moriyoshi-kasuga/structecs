@@ -85,8 +85,7 @@ unsafe impl<Args, Return> Sync for TypeErasedFn<Args, Return> {}
 ///     pub level: u32,
 /// }
 ///
-/// let world = World::new();
-/// let player_id = world.add_entity(Player {
+/// let player = Acquirable::new(Player {
 ///     name: "Hero".to_string(),
 ///     level: 10,
 /// });
@@ -97,9 +96,7 @@ unsafe impl<Args, Return> Sync for TypeErasedFn<Args, Return> {}
 /// });
 ///
 /// // Query for Player and call handler
-/// for (id, player) in world.query::<Player>() {
-///     player_handler.call(&player, ());  // Calls Player-specific logic
-/// }
+/// player_handler.call(&player, ());  // Calls Player-specific logic
 /// ```
 pub struct ComponentHandler<Base: Extractable, Args = (), Return = ()> {
     function: TypeErasedFn<Args, Return>,
@@ -200,8 +197,7 @@ impl<Base: Extractable, Args, Return> ComponentHandler<Base, Args, Return> {
     ///     pub level: u32,
     /// }
     ///
-    /// let world = World::new();
-    /// let player_id = world.add_entity(Player {
+    /// let player = Acquirable::new(Player {
     ///     name: "Hero".to_string(),
     ///     level: 10,
     /// });
@@ -210,9 +206,7 @@ impl<Base: Extractable, Args, Return> ComponentHandler<Base, Args, Return> {
     ///     println!("Player died");
     /// });
     ///
-    /// for (id, player) in world.query::<Player>() {
-    ///     handler.call(&player, ());
-    /// }
+    /// handler.call(&player, ());
     /// ```
     pub fn call<E: Extractable>(&self, entity: &Acquirable<E>, args: Args) -> Return {
         #[cfg(debug_assertions)]

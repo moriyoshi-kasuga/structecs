@@ -30,13 +30,4 @@ impl Extractor {
         // The data pointer points to the base of the entity data.
         Some(unsafe { data.add(*offset).cast::<T>() })
     }
-
-    #[inline(always)]
-    pub(crate) fn offset(&self, type_id: &TypeId) -> Option<usize> {
-        self.offsets.get(type_id).copied()
-    }
-
-    pub(crate) fn type_ids(&self) -> impl Iterator<Item = &TypeId> {
-        self.offsets.keys()
-    }
 }
