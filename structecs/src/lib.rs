@@ -1,3 +1,5 @@
+#![doc = include_str!("../../README.md")]
+
 use std::{any::TypeId, sync::LazyLock};
 
 use rustc_hash::FxHashMap;
