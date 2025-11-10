@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 #[cfg(debug_assertions)]
 use crate::ExtractionMetadata;
 use crate::{Acquirable, Extractable, entity::EntityData};
@@ -12,7 +14,8 @@ struct HandlerMetadata {
 
 /// Type-erased function wrapper that stores a handler function.
 struct TypeErasedFn<Args, Return> {
-    caller: Box<dyn Fn(EntityData, Args) -> Return + Send + Sync>,
+    #[allow(clippy::type_complexity)]
+    caller: Box<dyn Fn(&Arc<EntityData>, Args) -> Return + Send + Sync>,
     #[cfg(debug_assertions)]
     metadata: HandlerMetadata,
 }
@@ -25,7 +28,7 @@ impl<Args, Return> TypeErasedFn<Args, Return> {
         Base: Extractable,
         Concrete: Extractable,
     {
-        let caller = move |data: EntityData, args: Args| -> Return {
+        let caller = move |data: &Arc<EntityData>, args: Args| -> Return {
             // SAFETY: Type relationship is validated in debug builds during ComponentHandler creation
             #[allow(clippy::expect_used)]
             let entity = data
@@ -51,7 +54,7 @@ impl<Args, Return> TypeErasedFn<Args, Return> {
     }
 
     pub fn call<E: Extractable>(&self, entity: &Acquirable<E>, args: Args) -> Return {
-        (self.caller)(entity.inner.clone(), args)
+        (self.caller)(&entity.inner, args)
     }
 }
 
