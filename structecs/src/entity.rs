@@ -1,10 +1,4 @@
-use std::{
-    ptr::NonNull,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
+use std::{ptr::NonNull, sync::Arc};
 
 use crate::extractor::Extractor;
 
@@ -15,6 +9,7 @@ pub struct EntityId {
 }
 
 impl EntityId {
+    #[inline]
     pub(crate) fn new(id: u32) -> Self {
         Self { id }
     }
@@ -24,6 +19,7 @@ impl EntityId {
     /// # Safety
     /// The caller must ensure that the provided `id` is valid and unique within the context
     /// of the World. Using an invalid or duplicate ID may lead to undefined behavior.
+    #[inline]
     pub fn from_raw(id: u32) -> Self {
         Self { id }
     }
@@ -35,109 +31,69 @@ impl std::fmt::Display for EntityId {
     }
 }
 
-/// Internal reference-counted data for an entity.
-///
-/// Memory layout is optimized to reduce false sharing in concurrent scenarios.
-/// The counter is placed in its own cache line to avoid contention with other fields.
 #[repr(C)]
 pub(crate) struct EntityDataInner {
-    /// Reference counter - placed first and aligned to cache line for optimal concurrent access
-    pub(crate) counter: AtomicUsize,
-
     /// Pointer to the entity data
     pub(crate) data: NonNull<u8>,
 
     /// Extractor for component access
-    pub(crate) extractor: Arc<Extractor>,
+    pub(crate) extractor: &'static Extractor,
 }
 
+unsafe impl Send for EntityDataInner {}
+unsafe impl Sync for EntityDataInner {}
+
+impl Drop for EntityDataInner {
+    fn drop(&mut self) {
+        unsafe { (self.extractor.dropper)(self.data) };
+    }
+}
+
+#[derive(Clone)]
 pub struct EntityData {
-    inner: NonNull<EntityDataInner>,
+    inner: Arc<EntityDataInner>,
 }
-
-// SAFETY: EntityData uses atomic reference counting and all internal data
-// is properly synchronized with Arc. Safe to send across threads.
-unsafe impl Send for EntityData {}
-// SAFETY: EntityData uses Arc for extractor, providing safe concurrent access.
-// Safe to share across threads.
-unsafe impl Sync for EntityData {}
 
 impl EntityData {
-    pub(crate) fn inner(&self) -> &EntityDataInner {
-        // SAFETY: inner is always valid and points to a properly initialized EntityDataInner
-        // that is kept alive by reference counting.
-        unsafe { self.inner.as_ref() }
-    }
-
-    pub(crate) fn new<E: crate::Extractable>(entity: E, extractor: Arc<Extractor>) -> Self {
+    pub(crate) fn new<E: crate::Extractable>(entity: E, extractor: &'static Extractor) -> Self {
         let ptr = Box::into_raw(Box::new(entity)) as *mut u8;
         let inner = EntityDataInner {
-            counter: AtomicUsize::new(1),
             // SAFETY: Box::into_raw never returns null
             data: unsafe { NonNull::new_unchecked(ptr) },
             extractor,
         };
         Self {
-            // SAFETY: Box::into_raw never returns null
-            inner: unsafe { NonNull::new_unchecked(Box::into_raw(Box::new(inner))) },
+            inner: Arc::new(inner),
         }
     }
 
+    #[inline]
     pub(crate) unsafe fn extract_by_offset<T: 'static>(
         &self,
         offset: usize,
     ) -> crate::Acquirable<T> {
-        let data_ptr = self.inner().data;
         // SAFETY: The caller guarantees that offset is valid for type T within the entity data.
         // The offset comes from the Extractor which validates it during creation.
-        let extracted = unsafe { data_ptr.add(offset).cast::<T>() };
+        let extracted = unsafe { self.inner.data.add(offset).cast::<T>() };
         crate::Acquirable::new(extracted, self.clone())
     }
 
+    #[inline(always)]
     pub(crate) fn data_ptr(&self) -> NonNull<u8> {
-        self.inner().data
+        self.inner.data
     }
 
+    #[inline(always)]
     pub(crate) fn extract<T: 'static>(&self) -> Option<crate::Acquirable<T>> {
         // SAFETY: extract_ptr validates the type through the Extractor
         let extracted = unsafe { self.extract_ptr::<T>()? };
         Some(crate::Acquirable::new(extracted, self.clone()))
     }
 
+    #[inline(always)]
     pub(crate) unsafe fn extract_ptr<T: 'static>(&self) -> Option<NonNull<T>> {
         // SAFETY: The caller must ensure proper synchronization. The extractor validates
         // that type T exists in the entity data and returns None if not present.
-        unsafe { self.inner().extractor.extract_ptr::<T>(self.inner().data) }
-    }
-}
-
-impl Drop for EntityData {
-    fn drop(&mut self) {
-        let inner = self.inner();
-        if inner.counter.fetch_sub(1, Ordering::Release) > 1 {
-            return;
-        }
-
-        std::sync::atomic::fence(Ordering::Acquire);
-
-        // Drop the main entity data
-        // SAFETY: The dropper was created for the entity type when it was constructed.
-        // The data pointer is valid and points to properly allocated data of the correct type.
-        unsafe { (inner.extractor.dropper)(inner.data) };
-
-        // SAFETY: We are the last reference (counter reached 0), so we can safely
-        // deallocate the inner data. The inner pointer is valid and was allocated via Box.
-        unsafe {
-            let inner = Box::from_raw(self.inner.as_ptr());
-            drop(inner);
-        }
-    }
-}
-
-impl Clone for EntityData {
-    fn clone(&self) -> Self {
-        self.inner().counter.fetch_add(1, Ordering::Relaxed);
-
-        Self { inner: self.inner }
+        unsafe { self.inner.extractor.extract_ptr::<T>(self.inner.data) }
     }
 }

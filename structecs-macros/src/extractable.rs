@@ -112,5 +112,9 @@ fn expand(attr: Vec<Metadata<'_>>, input: &DeriveInput) -> syn::Result<TokenStre
                 #metadata_list
             ];
         }
+
+        structecs::__private::submit! {
+            structecs::ExtractableType::new::<#struct_name>()
+        }
     })
 }

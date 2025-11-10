@@ -2,7 +2,7 @@ use std::{any::TypeId, ptr::NonNull};
 
 use rustc_hash::FxHashMap;
 
-use crate::{Extractable, ExtractionMetadata};
+use crate::{ExtractionMetadata, extractable::ExtractableType};
 
 /// Extracts components from entity data using pre-computed offsets.
 pub struct Extractor {
@@ -11,17 +11,10 @@ pub struct Extractor {
 }
 
 impl Extractor {
-    /// Create a new extractor for the given extractable type.
-    pub(crate) fn new<E: Extractable>() -> Self {
+    pub(crate) fn new_type(target: &ExtractableType) -> Self {
         Self {
-            offsets: ExtractionMetadata::flatten(E::METADATA_LIST),
-            dropper: |ptr| {
-                // SAFETY: The pointer was created from Box::into_raw with type E,
-                // so it's safe to reconstruct and drop the Box<E>.
-                unsafe {
-                    drop(Box::from_raw(ptr.as_ptr() as *mut E));
-                }
-            },
+            offsets: ExtractionMetadata::flatten(target.metadata),
+            dropper: target.dropper,
         }
     }
 
@@ -29,14 +22,16 @@ impl Extractor {
     ///
     /// # Safety
     /// The caller must ensure the pointer is used correctly and not outlive the entity data.
+    #[inline(always)]
     pub(crate) unsafe fn extract_ptr<T: 'static>(&self, data: NonNull<u8>) -> Option<NonNull<T>> {
-        let type_id = TypeId::of::<T>();
+        let type_id = const { TypeId::of::<T>() };
         let offset = self.offsets.get(&type_id)?;
         // SAFETY: The offset is valid for type T and was computed during type analysis.
         // The data pointer points to the base of the entity data.
         Some(unsafe { data.add(*offset).cast::<T>() })
     }
 
+    #[inline(always)]
     pub(crate) fn offset(&self, type_id: &TypeId) -> Option<usize> {
         self.offsets.get(type_id).copied()
     }

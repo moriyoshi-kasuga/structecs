@@ -8,8 +8,7 @@ use crate::{Acquirable, EntityId, Extractable, entity::EntityData, extractor::Ex
 /// An archetype represents a unique combination of component types.
 /// All entities with the same structure share an archetype.
 pub struct Archetype {
-    /// The extractor for this archetype's entity structure.
-    pub(crate) extractor: Arc<Extractor>,
+    pub(crate) extractor: &'static Extractor,
 
     /// Entities stored in this archetype.
     pub(crate) entities: Arc<DashMap<EntityId, EntityData, FxBuildHasher>>,
@@ -18,13 +17,13 @@ pub struct Archetype {
 impl Archetype {
     pub(crate) fn new<E: Extractable>() -> Self {
         Self {
-            extractor: Arc::new(Extractor::new::<E>()),
+            extractor: crate::get_extractor::<E>(),
             entities: Arc::new(DashMap::with_hasher(FxBuildHasher)),
         }
     }
 
     pub(crate) fn add_entity<E: Extractable>(&self, id: EntityId, entity: E) -> EntityData {
-        let data = EntityData::new(entity, self.extractor.clone());
+        let data = EntityData::new(entity, self.extractor);
         self.entities.insert(id, data.clone());
         data
     }

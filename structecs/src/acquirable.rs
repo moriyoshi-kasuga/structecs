@@ -11,6 +11,7 @@ pub struct Acquirable<T: 'static> {
 }
 
 impl<T: 'static> Clone for Acquirable<T> {
+    #[inline(always)]
     fn clone(&self) -> Self {
         Self {
             target: self.target,
@@ -20,6 +21,7 @@ impl<T: 'static> Clone for Acquirable<T> {
 }
 
 impl<T: 'static> AsRef<T> for Acquirable<T> {
+    #[inline(always)]
     fn as_ref(&self) -> &T {
         // SAFETY: target points to valid T within the entity data,
         // which is kept alive by the inner EntityData.
@@ -30,17 +32,19 @@ impl<T: 'static> AsRef<T> for Acquirable<T> {
 impl<T: 'static> Deref for Acquirable<T> {
     type Target = T;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.as_ref()
     }
 }
 
 impl<T: 'static> Acquirable<T> {
+    #[inline(always)]
     pub(crate) fn new(target: NonNull<T>, inner: EntityData) -> Self {
         Self { target, inner }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) unsafe fn new_target(inner: EntityData) -> Self {
         // SAFETY: The caller must ensure that T is the correct type for the entity data.
         // Typically called after type checking via Extractor.
@@ -48,6 +52,7 @@ impl<T: 'static> Acquirable<T> {
     }
 
     /// Extract a different component type from the same entity.
+    #[inline(always)]
     pub fn extract<U: 'static>(&self) -> Option<Acquirable<U>> {
         // SAFETY: extract_ptr performs type checking via the Extractor
         // and only returns a pointer if type U exists in the entity.

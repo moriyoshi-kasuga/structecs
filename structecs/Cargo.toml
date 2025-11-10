@@ -19,6 +19,7 @@ workspace = true
 dashmap = { version = "6.1", features = ["raw-api"] }
 rustc-hash = "2.1"
 structecs-macros = { path = "../structecs-macros", version = "0" }
+inventory = "0.3"
 
 [dev-dependencies]
 criterion = "0.7"
