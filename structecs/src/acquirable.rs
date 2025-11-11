@@ -12,6 +12,12 @@ use crate::{Extractable, entity::EntityData};
 /// `Acquirable<T>` provides transparent access to component `T` through `Deref`,
 /// while maintaining ownership of the underlying entity data via reference counting.
 ///
+/// # Thread Safety
+///
+/// `Acquirable<T>` implements `Send` and `Sync` when `T: Send + Sync`, allowing
+/// safe sharing across threads. The internal reference counting is handled by `Arc`,
+/// which provides thread-safe access to immutable data.
+///
 /// # Examples
 ///
 /// ```
@@ -43,6 +49,11 @@ pub struct Acquirable<T: Extractable> {
 ///
 /// This is useful for preventing circular references and implementing
 /// cache-like structures.
+///
+/// # Thread Safety
+///
+/// `WeakAcquirable<T>` implements `Send` and `Sync` when `T: Send + Sync`,
+/// allowing weak references to be safely shared and transferred across threads.
 ///
 /// # Examples
 ///
@@ -404,6 +415,17 @@ impl<T: Extractable + Debug> Debug for Acquirable<T> {
     }
 }
 
+// SAFETY: Acquirable<T> can be safely sent between threads if T: Send + Sync.
+//
+// Thread-safety guarantees:
+// - The `target` field is a NonNull<T> pointer that points into EntityData's heap allocation.
+//   The data is immutable after creation (no interior mutability), so shared references
+//   are safe across threads when T: Sync.
+// - The `inner` field is an Arc<EntityData>, which provides thread-safe reference counting.
+//   Arc already implements Send when T: Send + Sync.
+// - Since T is accessed only through shared references (via Deref), we require T: Sync.
+// - We also require T: Send because the underlying data may be moved between threads
+//   when the last Arc is dropped on a different thread than where it was created.
 unsafe impl<T: Extractable + Send + Sync> Send for Acquirable<T> {}
 unsafe impl<T: Extractable + Send + Sync> Sync for Acquirable<T> {}
 
@@ -417,5 +439,15 @@ impl<T: Extractable> Clone for WeakAcquirable<T> {
     }
 }
 
+// SAFETY: WeakAcquirable<T> can be safely sent between threads if T: Send + Sync.
+//
+// Thread-safety guarantees:
+// - The `inner` field is a Weak<EntityData>, which provides thread-safe weak reference counting.
+//   Weak already implements Send when T: Send + Sync.
+// - WeakAcquirable does not directly hold any data; it only holds a weak reference.
+//   When upgraded to Acquirable<T>, the same Send + Sync bounds apply.
+// - The PhantomData<T> marker is zero-sized and does not affect thread safety.
+// - We require T: Send + Sync for the same reasons as Acquirable<T>: the underlying
+//   data must be safely transferable and shareable across threads.
 unsafe impl<T: Extractable + Send + Sync> Send for WeakAcquirable<T> {}
 unsafe impl<T: Extractable + Send + Sync> Sync for WeakAcquirable<T> {}
