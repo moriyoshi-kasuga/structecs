@@ -25,6 +25,29 @@ pub use handler::ComponentHandler;
 pub mod __private {
     // Re-export inventory submit for use in derive macros
     pub use inventory::submit;
+
+    pub const fn concat_str<const TOTAL: usize>(a: &'static str, b: &'static str) -> [u8; TOTAL] {
+        let bytes_a = a.as_bytes();
+        let bytes_b = b.as_bytes();
+        let mut buffer = [0u8; TOTAL];
+        let mut i = 0;
+        while i < bytes_a.len() {
+            buffer[i] = bytes_a[i];
+            i += 1;
+        }
+
+        buffer[i] = b':';
+        i += 1;
+        buffer[i] = b':';
+        i += 1;
+
+        let mut j = 0;
+        while j < bytes_b.len() {
+            buffer[i + j] = bytes_b[j];
+            j += 1;
+        }
+        buffer
+    }
 }
 
 pub static GLOBAL_EXTRACTOR_CACHE: LazyLock<FxHashMap<TypeId, extractor::Extractor>> =

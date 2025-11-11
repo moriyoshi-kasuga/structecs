@@ -8,6 +8,8 @@ use rustc_hash::FxHashMap;
 pub trait Extractable: 'static + Sized {
     /// Metadata describing how to extract components from this type.
     const METADATA_LIST: &'static [ExtractionMetadata];
+    #[cfg(debug_assertions)]
+    const IDENTIFIER: &'static str;
 }
 
 pub struct ExtractableType {
@@ -37,22 +39,33 @@ inventory::collect!(ExtractableType);
 /// Metadata describing how to extract types from an entity structure.
 pub enum ExtractionMetadata {
     /// Direct target at a specific offset.
-    Target { type_id: TypeId, offset: usize },
+    Target {
+        type_id: TypeId,
+        offset: usize,
+
+        #[cfg(debug_assertions)]
+        identifier: &'static str,
+    },
     /// Nested extractable type with its own metadata.
     Nested {
         type_id: TypeId,
         offset: usize,
         nested: &'static [ExtractionMetadata],
+
+        #[cfg(debug_assertions)]
+        identifier: &'static str,
     },
 }
 
 impl ExtractionMetadata {
     /// Create metadata for a direct target type.
     #[inline]
-    pub const fn new<T: 'static>(offset: usize) -> Self {
+    pub const fn new<T: Extractable>(offset: usize) -> Self {
         Self::Target {
             type_id: TypeId::of::<T>(),
             offset,
+            #[cfg(debug_assertions)]
+            identifier: T::IDENTIFIER,
         }
     }
 
@@ -66,6 +79,64 @@ impl ExtractionMetadata {
             type_id: TypeId::of::<T>(),
             offset,
             nested,
+            #[cfg(debug_assertions)]
+            identifier: T::IDENTIFIER,
+        }
+    }
+
+    /// 呼ぶ際にpanicをするさいには、それぞれの関数の一番最初にそれぞれが使用するべき。
+    /// constのpanicはtrack_callerなど意味がないので、public API関数の最初に置くのが良い。
+    pub const fn is_has<List: Extractable, Target: Extractable>() -> bool {
+        let list = List::METADATA_LIST;
+        let target = Target::IDENTIFIER;
+        let mut idx = 0;
+        while list.len() > idx {
+            if list[idx].has_val(target) {
+                return true;
+            }
+            idx += 1;
+        }
+        false
+    }
+
+    #[cfg(debug_assertions)]
+    pub const fn has_val(&self, identifier: &str) -> bool {
+        const fn eq_str(a: &str, b: &str) -> bool {
+            let a_bytes = a.as_bytes();
+            let b_bytes = b.as_bytes();
+            if a_bytes.len() != b_bytes.len() {
+                return false;
+            }
+            let mut idx = 0;
+            while idx < a_bytes.len() {
+                if a_bytes[idx] != b_bytes[idx] {
+                    return false;
+                }
+                idx += 1;
+            }
+            true
+        }
+
+        match self {
+            ExtractionMetadata::Target { identifier: id, .. } => eq_str(id, identifier),
+            ExtractionMetadata::Nested {
+                identifier: id,
+                nested,
+                ..
+            } => {
+                if eq_str(id, identifier) {
+                    true
+                } else {
+                    let mut idx = 0;
+                    while nested.len() > idx {
+                        if nested[idx].has_val(identifier) {
+                            return true;
+                        }
+                        idx += 1;
+                    }
+                    false
+                }
+            }
         }
     }
 
@@ -84,13 +155,16 @@ impl ExtractionMetadata {
     ) {
         for metadata in list {
             match metadata {
-                ExtractionMetadata::Target { type_id, offset } => {
+                ExtractionMetadata::Target {
+                    type_id, offset, ..
+                } => {
                     result.insert(*type_id, base_offset + *offset);
                 }
                 ExtractionMetadata::Nested {
                     type_id,
                     offset,
                     nested,
+                    ..
                 } => {
                     result.insert(*type_id, base_offset + *offset);
                     Self::flatten_internal(nested, base_offset + *offset, result);

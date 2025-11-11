@@ -73,13 +73,37 @@ pub struct WeakAcquirable<T: Extractable> {
 impl<T: Extractable> Acquirable<T> {
     pub fn new(target: T) -> Self {
         let data = Arc::new(EntityData::new(target, crate::get_extractor::<T>()));
-        // SAFETY: The extractor for T guarantees that T is at offset 0.
-        unsafe { data.extract_by_offset::<T>(0) }
+        Acquirable::new_raw(data.data.cast(), data)
+    }
+
+    pub fn new_safe<U: Extractable>(target: U) -> Acquirable<T> {
+        #[cfg(debug_assertions)]
+        const {
+            if !crate::ExtractionMetadata::is_has::<U, T>() {
+                panic!("Type U must contain T as extractable component")
+            }
+        }
+        let data = Arc::new(EntityData::new(target, crate::get_extractor::<U>()));
+        // SAFETY: The above compile-time check ensures that U contains T.
+        let extracted = unsafe { data.extract_ptr::<T>().unwrap_unchecked() };
+        Acquirable::new_raw(extracted, data)
     }
 
     #[inline(always)]
     pub(crate) fn new_raw(target: NonNull<T>, inner: Arc<EntityData>) -> Self {
         Self { target, inner }
+    }
+
+    pub fn extract_safe<U: Extractable>(&self) -> Acquirable<U> {
+        #[cfg(debug_assertions)]
+        const {
+            if !crate::ExtractionMetadata::is_has::<T, U>() {
+                panic!("Type U must contain T as extractable component")
+            }
+        }
+        // SAFETY: The above compile-time check ensures that U contains T.
+        let extracted = unsafe { self.inner.extract_ptr::<U>().unwrap_unchecked() };
+        Acquirable::new_raw(extracted, self.inner.clone())
     }
 
     /// Extract a different component type from the same entity.

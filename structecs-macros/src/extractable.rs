@@ -111,6 +111,19 @@ fn expand(attr: Vec<Metadata<'_>>, input: &DeriveInput) -> syn::Result<TokenStre
             const METADATA_LIST: &'static [structecs::ExtractionMetadata] = &[
                 #metadata_list
             ];
+
+            #[cfg(debug_assertions)]
+            const IDENTIFIER: &'static str = {
+                const MODULE_PATH: &str = module_path!();
+                const STRUCT_NAME: &str = stringify!(#struct_name);
+                const TOTAL: usize = MODULE_PATH.len() + 2 + STRUCT_NAME.len();
+                const FULL_IDENTIFIER_BYTES: [u8; TOTAL] =
+                    structecs::__private::concat_str::<TOTAL>(
+                        MODULE_PATH,
+                        STRUCT_NAME,
+                    );
+                unsafe { core::str::from_utf8_unchecked(&FULL_IDENTIFIER_BYTES) }
+            };
         }
 
         structecs::__private::submit! {

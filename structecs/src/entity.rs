@@ -29,17 +29,6 @@ impl EntityData {
         }
     }
 
-    #[inline]
-    pub(crate) unsafe fn extract_by_offset<T: Extractable>(
-        self: &Arc<Self>,
-        offset: usize,
-    ) -> crate::Acquirable<T> {
-        // SAFETY: The caller guarantees that offset is valid for type T within the entity data.
-        // The offset comes from the Extractor which validates it during creation.
-        let extracted = unsafe { self.data.add(offset).cast::<T>() };
-        crate::Acquirable::new_raw(extracted, self.clone())
-    }
-
     #[inline(always)]
     pub(crate) fn extract<T: Extractable>(self: &Arc<Self>) -> Option<crate::Acquirable<T>> {
         // SAFETY: extract_ptr validates the type through the Extractor
